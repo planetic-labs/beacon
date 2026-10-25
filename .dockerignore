@@ -2,7 +2,7 @@
 .env*
 !.env.example
 node_modules
-.next
+**/node_modules/
 .local
 uploads
 alpha-0-interface
@@ -32,5 +32,6 @@ imports
 coverage
 *.log
 *.tsbuildinfo
+**/*.tsbuildinfo
 
 **/dist/
