@@ -1,0 +1,227 @@
+/* The reference stylesheet is preserved verbatim. These rules adapt its frame
+   to the live app and add controls absent from the supplied interface package. */
+body {
+  overflow: hidden;
+}
+.rail-action svg,
+.mobile-bottom svg {
+  display: block;
+  margin: auto;
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.app {
+  width: 100vw !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.avatar {
+  border: 0;
+  object-fit: cover;
+}
+.message-tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+}
+.message-tools button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  min-height: 28px;
+}
+.reaction-pill {
+  border: 1px solid var(--line) !important;
+  background: white !important;
+  border-radius: 12px;
+  padding: 3px 7px !important;
+}
+.reaction-pill.mine {
+  background: #e8edfb !important;
+  border-color: var(--blue) !important;
+}
+.message-quote {
+  display: block;
+  border: 0;
+  border-left: 2px solid #bd6e91;
+  border-radius: 5px;
+  padding: 5px 9px;
+  margin-bottom: 6px;
+  text-align: left;
+  color: var(--muted);
+  background: #f1edf3;
+  max-width: 100%;
+  font-size: 12px;
+  cursor: pointer;
+}
+.forwarded {
+  color: var(--muted);
+  font-size: 11px;
+  margin-bottom: 5px;
+}
+.toast {
+  position: fixed;
+  z-index: 60;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(90vw, 480px);
+  box-shadow: var(--shadow);
+}
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: #10174466;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.dialog {
+  width: min(520px, 100%);
+  max-height: 90dvh;
+  overflow: auto;
+  background: white;
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+}
+.dialog-body {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+.dialog .user-row {
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+}
+.person-select {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.person-select input {
+  width: 18px;
+  height: 18px;
+}
+.people-options {
+  max-height: 42dvh;
+  overflow: auto;
+  display: grid;
+  gap: 5px;
+}
+.settings {
+  height: 100%;
+  overflow: auto;
+  background: #f6f7fb;
+}
+.settings-main {
+  max-width: 900px;
+  margin: auto;
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+.settings-card {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+}
+.settings-card h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.inline-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.auth-extra {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 12px;
+}
+.auth-status {
+  min-height: 20px;
+  margin-top: 12px;
+  text-align: center;
+  color: var(--danger);
+  font-size: 12px;
+}
+.composer-actions.live {
+  grid-template-columns: repeat(3, 40px) minmax(28px, 1fr) repeat(3, 40px);
+}
+.composer-actions.live .send-button {
+  grid-column: 7;
+}
+.emoji-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.emoji-picker button {
+  background: #f5f6fa;
+  border: 0;
+  border-radius: 12px;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 23px;
+  cursor: pointer;
+}
+.admin-layout {
+  overflow: auto;
+}
+.user-row.editable {
+  width: 100%;
+  text-align: left;
+  background: white;
+  border: 0;
+  border-bottom: 1px solid #edf0f5;
+  cursor: pointer;
+}
+.highlight .bubble {
+  outline: 2px solid var(--blue);
+}
+.loading-screen {
+  height: 100dvh;
+  display: grid;
+  place-items: center;
+  background: var(--canvas);
+}
+@media (max-width: 780px) {
+  .app[data-device="mobile"] .chat-shell > .chat-list {
+    flex: 1;
+    border: 0;
+  }
+  .app[data-device="mobile"] .chat-shell.has-chat > .chat-list {
+    display: none;
+  }
+  .app[data-device="mobile"] .chat-shell:not(.has-chat) > .workspace {
+    display: none;
+  }
+  .app[data-device="mobile"] .chat-shell.has-chat > .mobile-bottom {
+    display: none;
+  }
+  .settings-main {
+    padding: 12px;
+  }
+}
+@media (max-width: 360px) {
+  .composer-actions.live {
+    grid-template-columns: repeat(3, 36px) minmax(22px, 1fr) repeat(3, 36px) !important;
+  }
+}

@@ -1,0 +1,9 @@
+# Neutral example only; merge the routes into the externally managed Caddy.
+app.example.com {
+  handle /socket.io/* {
+    reverse_proxy 127.0.0.1:51001
+  }
+  handle {
+    reverse_proxy 127.0.0.1:51000
+  }
+}

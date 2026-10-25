@@ -1,0 +1,8 @@
+services:
+  web:
+    build:
+      target: production
+    command: [pnpm, start]
+  realtime:
+    build:
+      target: production

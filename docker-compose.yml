@@ -1,0 +1,86 @@
+name: beacon-${APP_ENV:?Set environment name}
+
+x-app: &app
+  build:
+    context: .
+    target: base
+  image: beacon-${APP_ENV:?Set environment name}-app
+  restart: unless-stopped
+  environment: &env
+    DATABASE_URL: postgresql://${POSTGRES_USER:-beacon}:${POSTGRES_PASSWORD:?Set password}@db:5432/${POSTGRES_DB:-beacon}
+    APP_URL: ${APP_URL:?Set app URL}
+    MEDIA_BASE_URL: ${MEDIA_BASE_URL:-}
+    BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set auth secret}
+    INITIAL_ADMIN_EMAILS: ${INITIAL_ADMIN_EMAILS:-}
+    MAIL_PROVIDER: ${MAIL_PROVIDER:-resend}
+    EMAIL_FROM: ${EMAIL_FROM:-}
+    RESEND_API_KEY: ${RESEND_API_KEY:-}
+    APP_ENV: ${APP_ENV:?Set environment name}
+    MEDIA_ROOT: /data/media
+    NEXT_TELEMETRY_DISABLED: "1"
+    VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+    VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+    VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+  volumes:
+    - media:/data/media
+  depends_on:
+    db:
+      condition: service_healthy
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  db:
+    image: postgres:18-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-beacon}
+      POSTGRES_DB: ${POSTGRES_DB:-beacon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set password}
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *logging
+  web:
+    <<: *app
+    command: [pnpm, dev]
+    ports:
+      - "127.0.0.1:${APP_PORT:?Set unique host port}:3000"
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+  realtime:
+    <<: *app
+    command: [pnpm, realtime]
+    ports:
+      - "127.0.0.1:${SOCKET_PORT:?Set unique socket host port}:3001"
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3001/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  postgres:
+  media:

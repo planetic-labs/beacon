@@ -1,0 +1,7 @@
+allowBuilds:
+  esbuild: true
+  sharp: true
+# Drizzle's legacy loader still requests a vulnerable esbuild release.
+# Keep this override until the loader is replaced upstream.
+overrides:
+  '@esbuild-kit/core-utils>esbuild': 0.28.2
