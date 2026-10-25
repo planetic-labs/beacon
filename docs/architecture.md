@@ -33,3 +33,32 @@ runs Fastify. Development: `pnpm dev`. Execute every command inside Docker.
 `sh scripts/ci.sh` orchestrates disposable Docker services for type checks,
 audit, HTTP integration, browser navigation, passkey, Socket.IO and push tests.
 Test configuration and fixture sessions never use deployment credentials.
+
+## Offline application shell and updates
+
+`pnpm build` generates a unique shell version and injects a public-asset allowlist
+into `dist/sw.js`. The HTML, built JS/CSS, icons and manifest are precached as one
+release. Source `public/sw.js` has no shell manifest, so development retains
+normal Vite caching and HMR. Use the same production build and `pnpm start` for
+preview and production; no deployment-domain or secret values enter the build.
+Each deployment must have its own origin, as required for independent cookies,
+service workers and browser caches.
+
+Only known application navigations receive the cached generic HTML shell.
+Authentication, APIs, user media, discovery endpoints and non-GET requests are
+never stored in Cache Storage or replaced by that shell. Offline shell startup
+does not grant access to messages or restore an expired session. The next online
+API request still checks the session and permissions.
+
+An incomplete precache installation is discarded. A complete new version waits
+until the user chooses Update or all old tabs close. The update button preserves
+message drafts in account-scoped session storage for this tab and restores them
+once after reload; it blocks updating during an edit, active mutation or storage
+failure that would lose a draft. Other tabs are not reloaded. Old release caches
+remain available until all open pages report that they run the current release.
+Push subscriptions and the existing push-access checks use the same worker.
+
+`tests/browser-pwa.ts` builds two releases and checks real Chromium service-worker
+installation, offline reload, API/media isolation, failed installation, explicit
+update, draft restoration, multiple tabs and cache cleanup against a disposable
+static server with synthetic API data. It needs no database or deployment secrets.

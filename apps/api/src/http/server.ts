@@ -32,6 +32,7 @@ export async function createApp(options: { dev?: boolean; serveWeb?: boolean } =
   });
   app.addHook("onSend", async (request, reply) => {
     reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("X-Robots-Tag", "noindex, nofollow, noarchive");
     if (!request.url.startsWith("/assets/")) reply.header("Cache-Control", "no-store");
   });
   function bridge(handler: Handler) {

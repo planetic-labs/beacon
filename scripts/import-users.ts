@@ -1,19 +1,30 @@
+import { emailSchema } from "../packages/shared/src/email";
 import { readFile, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { pool } from "../apps/api/src/db";
 
 // Input and the ID mapping must remain outside the repository.
-const inputSchema = z.array(z.object({
+const legacyUserSchema = z.object({
   sourceId: z.string().min(1),
-  email: z.email().transform((value) => value.trim().toLowerCase()),
+  email: emailSchema,
   firstName: z.string().trim(),
   lastName: z.string().trim(),
   emailVerified: z.boolean(),
   banned: z.boolean(),
   role: z.enum(["user", "admin"]),
+});
+const profileSchema = z.object({
+  first_name: z.string().trim().min(1).max(80),
+  last_name: z.string().trim().min(1).max(80),
+  email: emailSchema,
+}).transform(u => ({
+  sourceId: u.email, email: u.email, firstName: u.first_name, lastName: u.last_name,
+  emailVerified: false, banned: false, role: "user" as const,
 }));
+const inputSchema = z.array(z.union([legacyUserSchema, profileSchema]));
 const [inputPath, ...args] = process.argv.slice(2);
 const apply = args.includes("--apply");
+const updateProfiles = args.includes("--update-profiles");
 const reportPath = args.find((arg) => arg.startsWith("--report="))?.slice(9);
 let committed = false;
 try {
@@ -28,7 +39,7 @@ try {
   // Reserve the private report before changing the database; never overwrite one.
   if (apply) await writeFile(reportPath!, "{}\n", { flag: "wx", mode: 0o600 });
   const client = await pool.connect();
-  const summary = { total: users.length, created: 0, matched: 0, completedProfiles: 0 };
+  const summary = { total: users.length, created: 0, matched: 0, completedProfiles: 0, normalizedEmails: 0 };
   const mapping: { sourceId: string; userId: string }[] = [];
   try {
     await client.query("BEGIN");
@@ -36,7 +47,7 @@ try {
     await client.query('LOCK TABLE "user" IN SHARE ROW EXCLUSIVE MODE');
     for (const u of users) {
       const existing = await client.query(
-        'SELECT id, first_name, last_name FROM "user" WHERE lower(trim(email))=$1', [u.email],
+        'SELECT id, first_name, last_name, email FROM "user" WHERE lower(trim(email))=$1', [u.email],
       );
       if (existing.rowCount! > 1) throw new Error("Ambiguous target identity");
       let userId: string;
@@ -44,14 +55,18 @@ try {
         const row = existing.rows[0];
         userId = row.id;
         summary.matched++;
-        const firstName = row.first_name.trim() ? row.first_name : u.firstName;
-        const lastName = row.last_name.trim() ? row.last_name : u.lastName;
+        const firstName = !updateProfiles && row.first_name.trim() ? row.first_name : u.firstName;
+        const lastName = !updateProfiles && row.last_name.trim() ? row.last_name : u.lastName;
         if (firstName !== row.first_name || lastName !== row.last_name) {
           await client.query(
             'UPDATE "user" SET first_name=$2,last_name=$3,name=$4,updated_at=now() WHERE id=$1',
             [userId, firstName, lastName, [firstName, lastName].filter(Boolean).join(" ")],
           );
           summary.completedProfiles++;
+        }
+        if (row.email !== u.email) {
+          await client.query('UPDATE "user" SET email=$2,updated_at=now() WHERE id=$1', [userId, u.email]);
+          summary.normalizedEmails++;
         }
         // Existing roles, blocks, verification, avatars, sessions and history are preserved.
       } else {
@@ -64,6 +79,11 @@ try {
         summary.created++;
       }
       mapping.push({ sourceId: u.sourceId, userId });
+    }
+    if (updateProfiles) {
+      await client.query(`INSERT INTO outbox(kind,payload)
+        SELECT 'profile.changed',jsonb_build_object('userIds',(SELECT jsonb_agg(id) FROM "user" WHERE NOT banned),'profileUserId',id)
+        FROM "user" WHERE email=ANY($1::text[])`, [users.map(u => u.email)]);
     }
     await client.query(apply ? "COMMIT" : "ROLLBACK");
     committed = apply;

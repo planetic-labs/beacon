@@ -55,10 +55,15 @@ export async function POST(request: Request) {
           sql`update chat set image=${"/media/" + id} where id=${chatId}`,
         );
         await event(tx, chatId);
-      } else
+      } else {
         await tx.execute(
           sql`update "user" set image=${"/media/" + id},updated_at=now() where id=${targetUser}`,
         );
+        const recipients = await rows(sql`select id from "user" where not banned`, tx);
+        await tx.execute(sql`insert into outbox(kind,payload) values('profile.changed',${JSON.stringify({
+          userIds: recipients.map(recipient => recipient.id), profileUserId: targetUser,
+        })}::jsonb)`);
+      }
     });
     // The stable relative reference also works across private media delivery backends.
     return Response.json({ url: "/media/" + id });

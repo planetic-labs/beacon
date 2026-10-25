@@ -1,17 +1,17 @@
+import { emailSchema, normalizeEmail } from "../packages/shared/src/email";
 import { sql } from "drizzle-orm";
-import { z } from "zod";
 import { db, pool } from "../apps/api/src/db";
 const emails = [
   ...new Set(
     (process.env.INITIAL_ADMIN_EMAILS ?? "")
       .split(",")
-      .map((e) => e.trim().toLowerCase())
+      .map(normalizeEmail)
       .filter(Boolean),
   ),
 ];
 try {
   for (const email of emails) {
-    z.email().parse(email);
+    emailSchema.parse(email);
     await db.execute(
       sql`insert into "user"(name,email,role) values('',${email},'admin') on conflict(email) do nothing`,
     );

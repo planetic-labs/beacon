@@ -134,7 +134,7 @@ test("closed registration, chat invariants, access control, blocking and OIDC", 
   const oversized = await http(new Request(`${base}/api/v1/me`, { method: "PATCH", headers: { origin: base, "content-type": "application/json" }, body: "x".repeat(6 * 1024 * 1024 + 1) }));
   assert.equal(oversized.status, 413);
   const cookie = await login(emails[0]),
-    one = await login(emails[1]),
+    one = await login(`  ${emails[1].toUpperCase()}  `),
     two = await login(emails[2]);
   assert.equal((await call("me", "GET", undefined, cookie)).status, 200);
   const people = await (await call("users", "GET", undefined, one)).json();

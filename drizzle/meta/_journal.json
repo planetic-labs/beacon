@@ -43,6 +43,13 @@
       "when": 1792887429310,
       "tag": "0005_classy_squadron_sinister",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792935077049,
+      "tag": "0006_sparkling_maelstrom",
+      "breakpoints": true
     }
   ]
 }

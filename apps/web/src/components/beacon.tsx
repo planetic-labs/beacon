@@ -1,3 +1,4 @@
+import { normalizeEmail } from "@beacon/shared";
 import {
   useState,
   useEffect,
@@ -9,7 +10,7 @@ import {
 import { io, Socket } from "socket.io-client";
 import { useLocation, useNavigate, useSearch } from "@tanstack/react-router";
 import { v7 } from "uuid";
-import { authClient } from "@/auth-client";
+import { authClient, beginPasskeyAutofill } from "@/auth-client";
 import { Icon } from "./icon";
 import { renderMessage } from "./message-types";
 
@@ -18,11 +19,13 @@ import { api, ApiError, Avatar, Field, AvatarPicker, Dialog } from "./ui";
 import { Profile, Security, NewChat, UserForm, MembershipForm } from "./forms";
 import { PushSettings, ChatPushToggle, forgetPushDevice, pushWorker, syncPushDevice } from "./push-settings";
 export function Beacon(): ReactNode {
+  const [upcomingService, setUpcomingService] = useState<string | null>(null);
+  const stopPasskeyAutofill = useRef<(() => void) | null>(null);
   const navigate = useNavigate();
   const pathname = useLocation({ select: location => location.pathname });
   const legacyChat = useSearch({ strict: false }).chat;
-  const section = pathname === "/profile" ? "profile" : pathname === "/people" ? "people" : pathname === "/admin" ? "admin" : "chats";
-  const sectionRoutes = { chats: "/", people: "/people", admin: "/admin", profile: "/profile" } as const;
+  const section = pathname === "/profile" ? "profile" : pathname === "/admin" ? "admin" : "chats";
+  const sectionRoutes = { chats: "/", admin: "/admin", profile: "/profile" } as const;
   const setSection = (value: keyof typeof sectionRoutes) => { void navigate({ to: sectionRoutes[value], search: {} }); };
   const closeChat = () => { setSelected(null); selectedRef.current = null; void navigate({ to: "/", search: {} }); };
   const [device, setDevice] = useState("desktop"),
@@ -50,7 +53,6 @@ export function Beacon(): ReactNode {
     [pending, setPending] = useState<Pending[]>([]);
   const [modal, setModal] = useState<
       | "new"
-      | "people"
       | "group"
       | "reaction"
       | "forward"
@@ -80,21 +82,49 @@ export function Beacon(): ReactNode {
   messagesRef.current = messages;
   const notify = (e: unknown) =>
     setError(e instanceof Error ? e.message : String(e));
+  useEffect(() => {
+    if (!me?.id) return;
+    const key = `update-drafts:${me.id}`;
+    try {
+      const saved: unknown = JSON.parse(sessionStorage.getItem(key) ?? "null");
+      if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+        drafts.current = Object.fromEntries(Object.entries(saved).filter(([id, text]) => /^[0-9a-f-]{36}$/i.test(id) && typeof text === "string"));
+        if (selectedRef.current) setDraft(drafts.current[selectedRef.current] ?? "");
+        sessionStorage.removeItem(key);
+      }
+    } catch { /* Invalid or unavailable browser storage must not prevent login. */ }
+  }, [me?.id]);
+  useEffect(() => {
+    if (!me?.id) return;
+    const save = (event: Event) => {
+      if (busy || context?.kind === "edit") { event.preventDefault(); return; }
+      const saved = { ...drafts.current };
+      if (selected) saved[selected] = draft;
+      try { sessionStorage.setItem(`update-drafts:${me.id}`, JSON.stringify(saved)); }
+      catch { if (Object.values(saved).some(text => text.length)) event.preventDefault(); }
+    };
+    window.addEventListener("beacon:before-update", save);
+    return () => window.removeEventListener("beacon:before-update", save);
+  }, [me?.id, selected, draft, context, busy]);
   const refreshMe = useCallback(async () => {
     try {
-      const s = await authClient.getSession();
-      if (s.error) throw new Error("Не удалось проверить вход");
-      if (!s.data) {
-        setMe(null);
-        return;
-      }
       setMe(await api<User>("me"));
     } catch (e) {
-      notify(e);
+      if (e instanceof ApiError && e.status === 401) setMe(null);
+      else notify(e);
     } finally {
       setLoading(false);
     }
   }, []);
+  useEffect(() => {
+    if (loading || me || step !== "email" || busy) return;
+    const stop = beginPasskeyAutofill(refreshMe);
+    stopPasskeyAutofill.current = stop;
+    return () => {
+      stop();
+      if (stopPasskeyAutofill.current === stop) stopPasskeyAutofill.current = null;
+    };
+  }, [loading, me, step, busy, refreshMe]);
   const refreshLists = useCallback(async () => {
     const [cs, us] = await Promise.all([
       api<Chat[]>("chats"),
@@ -266,6 +296,10 @@ export function Beacon(): ReactNode {
       void refreshMe();
     });
     s.on("sync", sync);
+    s.on("profile.changed", ({ userId }: { userId: string }) => {
+      void refreshLists().catch(notify);
+      if (userId === meRef.current?.id) void refreshMe();
+    });
     s.on("chat.changed", ({ chatId }: { chatId: string }) => {
       void refreshLists().catch(notify);
       if (selectedRef.current === chatId)
@@ -350,6 +384,7 @@ export function Beacon(): ReactNode {
   async function requestCode(e?: FormEvent) {
     e?.preventDefault();
     if (busy) return;
+    stopPasskeyAutofill.current?.();
     setBusy(true);
     setError("");
     try {
@@ -378,18 +413,6 @@ export function Beacon(): ReactNode {
     } catch (e) {
       notify(e);
       setCode("");
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function passkeyLogin() {
-    setBusy(true);
-    try {
-      const r = await authClient.signIn.passkey();
-      if (r.error) throw new Error("Не удалось войти с ключом доступа");
-      await refreshMe();
-    } catch (e) {
-      notify(e);
     } finally {
       setBusy(false);
     }
@@ -497,8 +520,10 @@ export function Beacon(): ReactNode {
   }
   if (loading)
     return (
-      <main className="loading-screen">
-        <span className="spinner" aria-label="Загрузка" />
+      <main className="startup-screen" role="status" aria-live="polite">
+        <span className="startup-spinner" aria-hidden="true" />
+        <h1>Beacon</h1>
+        <p>Проверяем вход…</p>
       </main>
     );
   const toast = error && (
@@ -532,27 +557,24 @@ export function Beacon(): ReactNode {
                       id="email"
                       className="email-input"
                       type="email"
-                      autoComplete="email"
+                      autoComplete="username webauthn"
                       required
                       autoFocus
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => setEmail(normalizeEmail(e.target.value))}
                       disabled={busy}
                     />
+                    <button
+                      type="submit"
+                      className="email-field-action email-submit-action"
+                      aria-label="Получить код"
+                      title="Получить код на email"
+                      disabled={busy || !email.trim()}
+                    >
+                      <Icon name="next" />
+                    </button>
                   </div>
-                  <button className="sr-only" disabled={busy}>
-                    Получить код
-                  </button>
                 </form>
-                <div className="auth-extra">
-                  <button
-                    className="text-button"
-                    onClick={passkeyLogin}
-                    disabled={busy}
-                  >
-                    Войти с ключом доступа
-                  </button>
-                </div>
               </>
             ) : (
               <>
@@ -640,44 +662,66 @@ export function Beacon(): ReactNode {
       </div>
     );
   const current = chats.find((c) => c.id === selected);
+  const listedChats = chats.filter(c => c.kind === "group" || c.lastAt);
+  const emptyDirectChats = new Map(chats.filter(c => c.kind === "direct" && !c.lastAt).map(c => [c.peerId, c]));
+  const directUserIds = new Set(listedChats.filter(c => c.kind === "direct").map(c => c.peerId));
+  const availableUsers = users.filter(u => u.id !== me.id && !directUserIds.has(u.id));
+  const startDirectChat = async (userId: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const chat = await api<{ id: string }>("chats", "POST", { kind: "direct", userIds: [userId] });
+      await refreshLists();
+      openChat(chat.id);
+    } catch (e) { notify(e); }
+    finally { setBusy(false); }
+  };
   const nav = (
     <aside className="nav-rail" aria-label="Основная навигация">
       <div className="brand-mark">П</div>
       <button
-        className={`rail-action ${section === "people" ? "active" : ""}`}
-        onClick={() => setSection("people")}
-      >
-        <Icon name="users" />
-        <small>Люди</small>
-      </button>
-      <button className="rail-action" onClick={() => setModal("new")}>
-        <Icon name="plus" />
-        <small>Создать</small>
-      </button>
-      <button
         className={`rail-action ${section === "chats" ? "active" : ""}`}
         onClick={() => setSection("chats")}
+        aria-label="Чаты"
       >
         <Icon name="chats" />
-        <small>Чаты</small>
+        <span className="rail-tooltip" aria-hidden="true">Чаты</span>
       </button>
+      {([
+        ["search", "Поиск"],
+        ["materials", "Материалы"],
+        ["navigator", "Навигатор"],
+        ["storage", "Хранилище"],
+      ] as const).map(([icon, label]) => (
+        <button
+          key={icon}
+          className="rail-action"
+          aria-label={label}
+          aria-haspopup="dialog"
+          onClick={() => setUpcomingService(label)}
+        >
+          <Icon name={icon} />
+          <span className="rail-tooltip" aria-hidden="true">{label}</span>
+        </button>
+      ))}
       {me.role === "admin" && (
         <button
           className={`rail-action ${section === "admin" ? "active" : ""}`}
           onClick={() => setSection("admin")}
+          aria-label="Управление"
         >
           <Icon name="settings" />
-          <small>Управление</small>
+          <span className="rail-tooltip" aria-hidden="true">Управление</span>
         </button>
       )}
       <span className="rail-spacer" />
       <button
-        className="rail-action"
+        className={`rail-action ${section === "profile" ? "active" : ""}`}
         onClick={() => setSection("profile")}
         aria-label="Профиль"
       >
-        {me.firstName[0]}
-        {me.lastName[0]}
+        {me.image ? <Avatar name={me.name} image={me.image} extra="rail-profile-avatar" /> : <Icon name="profile" />}
+        <span className="rail-tooltip" aria-hidden="true">Профиль</span>
       </button>
     </aside>
   );
@@ -709,12 +753,11 @@ export function Beacon(): ReactNode {
                   </span>
                 </div>
                 <button
-                  className="avatar self-avatar warm"
+                  className="profile-avatar-button"
                   onClick={() => setSection("profile")}
                   aria-label="Открыть профиль"
                 >
-                  {me.firstName[0]}
-                  {me.lastName[0]}
+                  <Avatar name={me.name} image={me.image} extra="self-avatar warm" />
                 </button>
               </div>
               <div className="list-heading">
@@ -738,7 +781,7 @@ export function Beacon(): ReactNode {
               </div>
             </header>
             <div className="chat-rows">
-              {chats.map((c) => (
+              {listedChats.map((c) => (
                 <button
                   className={`chat-row ${selected === c.id ? "active" : ""}`}
                   key={c.id}
@@ -768,7 +811,27 @@ export function Beacon(): ReactNode {
                   </div>
                 </button>
               ))}
-              {!chats.length && (
+              {availableUsers.map(u => (
+                <button
+                  className={`chat-row ${selected === emptyDirectChats.get(u.id)?.id ? "active" : ""}`}
+                  key={`user:${u.id}`}
+                  disabled={(!emptyDirectChats.has(u.id) && u.banned) || busy}
+                  onClick={() => {
+                    const existing = emptyDirectChats.get(u.id);
+                    if (existing) openChat(existing.id);
+                    else void startDirectChat(u.id);
+                  }}
+                >
+                  <Avatar name={u.name} image={u.image} />
+                  <div className="chat-row-main">
+                    <div className="chat-row-title">{u.name}</div>
+                    <div className="chat-row-preview">
+                      {u.banned ? "Доступ приостановлен" : "Сообщений пока нет"}
+                    </div>
+                  </div>
+                </button>
+              ))}
+              {!chats.length && !availableUsers.length && (
                 <div className="empty-state">
                   <div>
                     <h2>Пока нет переписок</h2>
@@ -862,7 +925,7 @@ export function Beacon(): ReactNode {
                             <div className="message-avatar">
                               <Avatar
                                 name={m.authorName}
-                                image={m.authorImage}
+                                image={users.find(u => u.id === m.authorId)?.image ?? m.authorImage}
                                 extra="green"
                               />
                             </div>
@@ -1109,14 +1172,6 @@ export function Beacon(): ReactNode {
             )}
           </section>
           <nav className="mobile-bottom" aria-label="Навигация">
-            <button onClick={() => setSection("people")}>
-              <Icon name="users" />
-              <span>Люди</span>
-            </button>
-            <button onClick={() => setModal("new")}>
-              <Icon name="plus" />
-              <span>Создать</span>
-            </button>
             <button className="active">
               <Icon name="chats" />
               <span>Чаты</span>
@@ -1169,6 +1224,7 @@ export function Beacon(): ReactNode {
                       await forgetPushDevice().catch(()=>{});
                       await authClient.signOut();
                       sessionStorage.removeItem(`pending:${me.id}`);
+                      sessionStorage.removeItem(`update-drafts:${me.id}`);
                       setMe(null);
                       setSection("chats");
                       closeChat();
@@ -1179,43 +1235,6 @@ export function Beacon(): ReactNode {
                     Выйти из аккаунта
                   </button>
                 </>
-              ) : section === "people" ? (
-                <div className="settings-card">
-                  {users.map((u) => (
-                    <button
-                      className="chat-row"
-                      key={u.id}
-                      disabled={u.banned || u.id === me.id}
-                      onClick={async () => {
-                        try {
-                          openChat(
-                            (
-                              await api("chats", "POST", {
-                                kind: "direct",
-                                userIds: [u.id],
-                              })
-                            ).id,
-                          );
-                          await refreshLists();
-                        } catch (e) {
-                          notify(e);
-                        }
-                      }}
-                    >
-                      <Avatar name={u.name} image={u.image} />
-                      <div className="chat-row-main">
-                        <div className="chat-row-title">{u.name}</div>
-                        <div className="chat-row-preview">
-                          {u.banned
-                            ? "Доступ приостановлен"
-                            : u.id === me.id
-                              ? "Это вы"
-                              : "Написать сообщение"}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
               ) : (
                 <>
                   <div className="settings-card">
@@ -1312,6 +1331,11 @@ export function Beacon(): ReactNode {
             </div>
           </main>
         </div>
+      )}
+      {upcomingService && (
+        <Dialog title={upcomingService} close={() => setUpcomingService(null)}>
+          <div className="empty-state"><h2>В разработке</h2></div>
+        </Dialog>
       )}
       {modal === "new" && (
         <Dialog title="Новый чат" close={() => setModal(null)}>

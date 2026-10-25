@@ -1,16 +1,74 @@
-const CACHE = 'beacon-shell-v3';
+// Replaced only in a production build. The dev worker never caches source modules.
+const SHELL = /* BEACON_SHELL */ null;
+const CACHE = SHELL ? 'beacon-shell-' + SHELL.version : 'beacon-shell-dev-v4';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const clientVersions = new Map();
+const shellPaths = new Set(SHELL ? SHELL.urls : ['/offline.html', '/icon-192.png']);
+const isAppPage = path => ['/', '/index.html', '/profile', '/people', '/admin', '/consent'].includes(path)
+  || (path.startsWith('/chats/') && uuid.test(path.slice(7)));
+async function cleanOldCaches() {
+  const windows = await self.clients.matchAll({type:'window', includeUncontrolled:true});
+  // Keep old assets while any tab still runs that release (or has not answered).
+  if (SHELL && windows.some(client => clientVersions.get(client.id) !== SHELL.version)) return;
+  const keys = await caches.keys();
+  await Promise.all(keys.filter(key => key.startsWith('beacon-shell-') && key !== CACHE).map(key => caches.delete(key)));
+}
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['/offline.html','/icon-192.png'])).then(() => self.skipWaiting()));
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    try {
+      await cache.addAll([...shellPaths].map(path => new Request(path, {cache:'reload', credentials:'omit'})));
+      if (!SHELL) await self.skipWaiting();
+    } catch (error) {
+      await caches.delete(CACHE);
+      throw error;
+    }
+  })());
 });
 self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('beacon-shell-') && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  event.waitUntil((async () => {
+    await self.clients.claim();
+    const windows = await self.clients.matchAll({type:'window', includeUncontrolled:true});
+    for (const client of windows) client.postMessage({type:'beacon:version-query', version:SHELL?.version});
+    await cleanOldCaches();
+  })());
+});
+self.addEventListener('message', event => {
+  if (event.data?.type === 'beacon:activate-update') event.waitUntil(self.skipWaiting());
+  if (event.data?.type === 'beacon:client-version' && event.source?.id) {
+    clientVersions.set(event.source.id, event.data.version);
+    event.source.postMessage({type:'beacon:active-version', version:SHELL?.version});
+    event.waitUntil(cleanOldCaches());
+  }
 });
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith('/api/')) return;
-  if (event.request.mode === 'navigate') event.respondWith(fetch(event.request).catch(() => caches.match('/offline.html')));
+  if (event.request.mode === 'navigate' && isAppPage(url.pathname)) {
+    event.respondWith((async () => {
+      if (SHELL) {
+        const cached = await (await caches.open(CACHE)).match('/index.html');
+        if (cached) return cached;
+      }
+      try { return await fetch(event.request); }
+      catch { return (await (await caches.open(CACHE)).match('/offline.html')) || Response.error(); }
+    })());
+  } else if (SHELL && (shellPaths.has(url.pathname) || url.pathname.startsWith('/assets/'))) {
+    event.respondWith((async () => {
+      const cached = await (await caches.open(CACHE)).match(url.pathname);
+      if (cached) return cached;
+      // Older open tabs may still request their release's hashed assets.
+      if (url.pathname.startsWith('/assets/')) {
+        for (const key of await caches.keys()) {
+          if (!key.startsWith('beacon-shell-')) continue;
+          const previous = await (await caches.open(key)).match(url.pathname);
+          if (previous) return previous;
+        }
+      }
+      return fetch(event.request);
+    })());
+  }
+  // API, authentication, user media and other documents always use the network.
 });
 self.addEventListener('push', event => {
   event.waitUntil((async () => {

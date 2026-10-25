@@ -1,3 +1,4 @@
+import { emailSchema } from "@beacon/shared";
 import { sql } from "drizzle-orm";
 import { z, ZodError } from "zod";
 import { db } from "@api/db";
@@ -248,7 +249,7 @@ async function handler(
       if (p[1] === "users" && method === "POST") {
         const input = names
           .extend({
-            email: z.email().transform((e) => e.toLowerCase()),
+            email: emailSchema,
             role: z.enum(["user", "admin"]),
           })
           .parse(data);
@@ -272,7 +273,7 @@ async function handler(
         const id = uuid.parse(p[2]),
           input = names
             .extend({
-              email: z.email().transform((e) => e.toLowerCase()),
+              email: emailSchema,
               role: z.enum(["user", "admin"]),
               banned: z.boolean(),
             })
