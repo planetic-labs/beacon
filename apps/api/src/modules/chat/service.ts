@@ -90,13 +90,14 @@ export async function createChat(
 export async function chatList(u: Actor) {
   return rows(sql`
  select c.id,c.kind,c.title,c.owner_id as "ownerId",c.image,
+ case when c.kind='direct' then (select m2.user_id from chat_member m2 where m2.chat_id=c.id and m2.user_id<>${u.id} limit 1) end as "peerId",
  case when c.kind='direct' then (select name from "user" u2 join chat_member m2 on m2.user_id=u2.id where m2.chat_id=c.id and u2.id<>${u.id} limit 1) else c.title end as name,
  case when c.kind='direct' then (select image from "user" u2 join chat_member m2 on m2.user_id=u2.id where m2.chat_id=c.id and u2.id<>${u.id} limit 1) else c.image end as avatar,
  last_msg.content->>'text' as preview,last_msg.created_at as "lastAt",
  (select count(*)::int from message msg where msg.chat_id=c.id and msg.author_id<>${u.id} and msg.created_at>m.last_read_at) as unread
  from chat c join chat_member m on m.chat_id=c.id and m.user_id=${u.id}
  left join lateral(select content,created_at from message where chat_id=c.id order by created_at desc,id desc limit 1) last_msg on true
- order by coalesce(last_msg.created_at,c.created_at) desc,c.id desc`);
+ order by last_msg.created_at desc nulls last,name,c.id`);
 }
 export async function history(
   chatId: string,

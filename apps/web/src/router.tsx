@@ -1,4 +1,4 @@
-import { createRootRoute, createRoute, createRouter, Outlet, Link } from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, Outlet, Link, redirect } from "@tanstack/react-router";
 import { Beacon } from "./components/beacon";
 import Consent from "./consent";
 
@@ -15,7 +15,7 @@ const root = createRootRoute({
 const app = createRoute({ getParentRoute: () => root, id: "app", component: Beacon });
 const index = createRoute({ getParentRoute: () => app, path: "/" });
 const chat = createRoute({ getParentRoute: () => app, path: "/chats/$chatId" });
-const people = createRoute({ getParentRoute: () => app, path: "/people" });
+const people = createRoute({ getParentRoute: () => app, path: "/people", beforeLoad: () => { throw redirect({ to: "/", replace: true }); } });
 const profile = createRoute({ getParentRoute: () => app, path: "/profile" });
 const admin = createRoute({ getParentRoute: () => app, path: "/admin" });
 const consent = createRoute({ getParentRoute: () => root, path: "/consent", component: Consent });

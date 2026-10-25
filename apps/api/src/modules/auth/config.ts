@@ -1,3 +1,5 @@
+import { normalizeEmail } from "@beacon/shared";
+import { createAuthMiddleware } from "better-auth/api";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin, emailOTP, jwt } from "better-auth/plugins";
@@ -22,6 +24,12 @@ const createAuth = () => betterAuth({
       if (!status || status >= 500)
         console.error("ERROR authentication request failed");
     },
+  },
+  hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      if (typeof ctx.body?.email === "string") ctx.body.email = normalizeEmail(ctx.body.email);
+      if (typeof ctx.query?.email === "string") ctx.query.email = normalizeEmail(ctx.query.email);
+    }),
   },
   appName: "Beacon",
   baseURL: process.env.APP_URL,
@@ -73,10 +81,10 @@ const createAuth = () => betterAuth({
         const [u] = await db
           .select()
           .from(schema.user)
-          .where(eq(schema.user.email, email.toLowerCase()));
+          .where(eq(schema.user.email, normalizeEmail(email)));
         if (!u || u.banned) return;
         await mailDelivery.send({
-          to: email,
+          to: normalizeEmail(email),
           subject: "Код входа в Beacon",
           text: `Код входа: ${otp}. Действует 10 минут.`,
           html: `<p>Код входа: <strong>${otp}</strong></p><p>Действует 10 минут.</p>`,

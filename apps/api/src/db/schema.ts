@@ -34,7 +34,7 @@ export const user = pgTable("user", {
   banExpires: timestamp("ban_expires", { withTimezone: true }),
   createdAt: time("created_at"),
   updatedAt: time("updated_at"),
-});
+}, (t) => [check("user_email_canonical", sql`${t.email} = lower(btrim(${t.email}))`)]);
 export const session = pgTable(
   "session",
   {

@@ -12,6 +12,7 @@ export type User = {
 export type Chat = {
   id: string;
   kind: "direct" | "group";
+  peerId?: string;
   name: string;
   title: string;
   ownerId: string;

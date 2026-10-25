@@ -22,12 +22,14 @@ try {
   await expect.poll(() => connected, { timeout: 15000 }).toBe(true);
   const source = await context.request.get(`${base}/src/main.tsx`);
   expect(source.status()).toBe(200);
+  expect(source.headers()["cache-control"]).toBe("no-cache");
+  expect(source.headers().etag).toBeTruthy();
   expect(await source.text()).toContain("RouterProvider");
   const privateSource = await context.request.get(`${base}/@fs/app/apps/api/src/modules/auth/config.ts`);
   expect(privateSource.status()).toBe(403);
   expect(await privateSource.text()).not.toContain("BETTER_AUTH_SECRET");
   const worker = await context.request.get(`${base}/sw.js`);
-  expect(worker.headers()["cache-control"]).toBe("no-store");
+  expect(worker.headers()["cache-control"]).toBe("no-cache");
   expect(errors).toEqual([]);
   console.log("INFO development checks passed: Fastify/Vite, HMR, direct routes and private source isolation");
 } finally { await browser.close(); }

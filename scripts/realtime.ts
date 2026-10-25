@@ -60,6 +60,8 @@ async function listen() {
       const e = JSON.parse(n.payload!);
       if (e.kind === "user.revoked")
         io.in(`user:${e.userId}`).disconnectSockets(true);
+      else if (e.kind === "profile.changed")
+        io.to(`user:${e.userId}`).emit("profile.changed", { userId: e.profileUserId });
       else io.to(`user:${e.userId}`).emit("chat.changed", { chatId: e.chatId });
     } catch {
       console.error("ERROR invalid realtime event");
@@ -89,7 +91,7 @@ const dispatch = setInterval(async () => {
           : (payload.userIds ?? []);
         for (const userId of ids)
           await tx.execute(
-            sql`select pg_notify('beacon_events',${JSON.stringify({ kind: item.kind, userId, chatId: payload.chatId })})`,
+            sql`select pg_notify('beacon_events',${JSON.stringify({ kind: item.kind, userId, chatId: payload.chatId, profileUserId: payload.profileUserId })})`,
           );
         await tx.execute(
           sql`update outbox set processed_at=now() where id=${item.id}`,

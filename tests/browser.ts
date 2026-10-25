@@ -154,8 +154,23 @@ try {
   });
   await a.getByRole("button", { name: "Добавить ключ доступа" }).click();
   await expect(a.getByText("Мой ключ доступа", { exact: true })).toBeVisible();
+  // Headless Chromium has no autofill picker. Keep real WebAuthn signing and
+  // server verification, but let the virtual authenticator answer the conditional request.
+  await a.evaluate(`(() => {
+    Object.defineProperty(PublicKeyCredential, "isConditionalMediationAvailable", {
+      configurable: true, value: async () => true,
+    });
+    const get = navigator.credentials.get.bind(navigator.credentials);
+    navigator.credentials.get = options => {
+      if (options?.mediation === "conditional") {
+        document.documentElement.dataset.conditionalPasskey = "requested";
+        return get({ ...options, mediation: "optional" });
+      }
+      return get(options);
+    };
+  })()`);
   await a.getByRole("button", { name: "Выйти из аккаунта" }).click();
-  await a.getByRole("button", { name: "Войти с ключом доступа" }).click();
+  await expect(a.locator("html")).toHaveAttribute("data-conditional-passkey", "requested");
   await expect(
     a.getByRole("heading", { name: "Чаты", exact: true }),
   ).toBeVisible();

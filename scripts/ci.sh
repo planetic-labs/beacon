@@ -43,6 +43,8 @@ export CI_RUNTIME="$runtime"
 docker build --target base -t beacon-tooling .
 docker build --target production -t beacon-production-check .
 docker build -f Dockerfile.test -t beacon-browser .
+# Static PWA lifecycle checks use synthetic API data and no database.
+docker run --rm beacon-browser pnpm exec tsx tests/browser-pwa.ts
 docker run --rm --user "$(id -u):$(id -g)" -v "$runtime:/run/config" beacon-tooling \
   pnpm exec tsx scripts/generate-push-keys.ts /run/config/test.env
 compose up -d --wait db
