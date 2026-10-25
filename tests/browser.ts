@@ -156,7 +156,7 @@ try {
   await expect(a.getByText("Мой ключ доступа", { exact: true })).toBeVisible();
   // Headless Chromium has no autofill picker. Keep real WebAuthn signing and
   // server verification, but let the virtual authenticator answer the conditional request.
-  await a.evaluate(() => {
+  await a.evaluate(`(() => {
     Object.defineProperty(PublicKeyCredential, "isConditionalMediationAvailable", {
       configurable: true, value: async () => true,
     });
@@ -168,7 +168,7 @@ try {
       }
       return get(options);
     };
-  });
+  })()`);
   await a.getByRole("button", { name: "Выйти из аккаунта" }).click();
   await expect(a.locator("html")).toHaveAttribute("data-conditional-passkey", "requested");
   await expect(

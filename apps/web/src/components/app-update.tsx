@@ -19,6 +19,7 @@ export function AppUpdate() {
       if (reloadOnChange.current) location.reload();
     };
     const message = (event: MessageEvent) => {
+      if (event.origin !== location.origin) return;
       if (["beacon:version-query", "beacon:active-version"].includes(event.data?.type)) {
         if (event.data.version && event.data.version !== version) setAvailable(true);
         if (event.data.type === "beacon:version-query")

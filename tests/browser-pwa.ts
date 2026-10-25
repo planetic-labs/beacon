@@ -2,7 +2,7 @@ import { chromium, expect } from "@playwright/test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, extname } from "node:path";
 
@@ -37,11 +37,16 @@ const server = createServer(async (request, response) => {
     }
     let filename = resolve(release, `.${path}`);
     if (!filename.startsWith(release + "/")) filename = resolve(release, "index.html");
-    try { if (!(await stat(filename)).isFile()) filename = resolve(release, "index.html"); }
-    catch { if (path.startsWith("/assets/")) { response.writeHead(404); response.end(); return; } filename = resolve(release, "index.html"); }
+    let content: Buffer;
+    try { content = await readFile(filename); }
+    catch {
+      if (path.startsWith("/assets/")) { response.writeHead(404); response.end(); return; }
+      filename = resolve(release, "index.html");
+      content = await readFile(filename);
+    }
     const mime: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json" };
     response.setHeader("Content-Type", mime[extname(filename)] ?? "application/octet-stream");
-    response.end(await readFile(filename));
+    response.end(content);
   } catch { response.writeHead(500); response.end(); }
 });
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;

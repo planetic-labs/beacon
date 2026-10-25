@@ -34,6 +34,7 @@ self.addEventListener('activate', event => {
   })());
 });
 self.addEventListener('message', event => {
+  if (event.origin !== self.location.origin) return;
   if (event.data?.type === 'beacon:activate-update') event.waitUntil(self.skipWaiting());
   if (event.data?.type === 'beacon:client-version' && event.source?.id) {
     clientVersions.set(event.source.id, event.data.version);
