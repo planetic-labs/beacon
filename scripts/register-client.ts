@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
-import { auth } from "../src/modules/auth/config";
-import { pool } from "../src/db";
+import { auth } from "../apps/api/src/modules/auth/config";
+import { pool } from "../apps/api/src/db";
 // Run explicitly; credentials are written to a mounted external directory, never stdout.
 const [redirectUri, output] = process.argv.slice(2);
 if (!redirectUri || !output?.startsWith("/run/"))

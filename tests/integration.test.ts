@@ -3,17 +3,30 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { v7 } from "uuid";
-import { auth } from "../src/modules/auth/config";
-import { db, pool } from "../src/db";
-import { GET, POST, PATCH } from "../src/app/api/v1/[...path]/route";
-import { POST as authPost } from "../src/app/api/auth/[...all]/route";
-import { GET as metadata } from "../src/app/.well-known/openid-configuration/route";
-import { POST as uploadAvatar } from "../src/app/api/avatar/route";
-import { GET as readMedia } from "../src/app/media/[id]/route";
+import { auth } from "../apps/api/src/modules/auth/config";
+import { db, pool } from "../apps/api/src/db";
 import { getAuthTables } from "better-auth/db";
-import * as schema from "../src/db/schema";
+import * as schema from "../apps/api/src/db/schema";
 import { getTableColumns } from "drizzle-orm";
 import { pushScenarios } from "./push-scenarios";
+import { createApp } from "../apps/api/src/http/server";
+import type { HTTPMethods } from "fastify";
+const appPromise = createApp({ serveWeb: false });
+async function http(request: Request): Promise<Response> {
+  const app = await appPromise;
+  const url = new URL(request.url);
+  const result = await app.inject({ method: request.method as HTTPMethods, url: url.pathname + url.search,
+    headers: Object.fromEntries(request.headers),
+    payload: ["GET", "HEAD"].includes(request.method) ? undefined : Buffer.from(await request.arrayBuffer()),
+  });
+  const headers = new Headers();
+  for (const [key, values] of Object.entries(result.headers)) {
+    if (values !== undefined) for (const value of Array.isArray(values) ? values : [values]) headers.append(key, String(value));
+  }
+  return new Response(result.statusCode === 204 ? null : new Uint8Array(result.rawPayload), { status: result.statusCode, headers });
+}
+const authPost = http, metadata = http, uploadAvatar = http;
+const readMedia = (request: Request, _context: unknown) => http(request);
 
 const base = process.env.APP_URL!;
 const emails = [
@@ -35,7 +48,7 @@ process.env.EMAIL_FROM = "test@example.com";
 const ids = [v7(), v7(), v7()];
 let requestNumber = 1;
 async function authReq(path: string, body: unknown, cookie?: string) {
-  return auth.handler(
+  return http(
     new Request(`${base}/api/auth/${path}`, {
       method: "POST",
       headers: {
@@ -80,12 +93,11 @@ async function call(
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
-  return ({ GET, POST, PATCH } as Record<string, typeof GET>)[method](req, {
-    params: Promise.resolve({ path: path.split("?")[0].split("/") }),
-  });
+  return http(req);
 }
 after(async () => {
   globalThis.fetch = realFetch;
+  await (await appPromise).close();
   await pool.end();
 });
 
@@ -114,6 +126,13 @@ test("closed registration, chat invariants, access control, blocking and OIDC", 
     await db.execute(
       sql`insert into "user"(id,name,first_name,last_name,email,role) values(${ids[i]},${"Test " + i},'Test',${String(i)},${emails[i]},${i === 0 ? "admin" : "user"})`,
     );
+  const missing = await http(new Request(`${base}/api/not-a-route`, { headers: { accept: "text/html" } }));
+  assert.equal(missing.status, 404);
+  assert.match(missing.headers.get("content-type")!, /application\/json/);
+  const deniedOrigin = await http(new Request(`${base}/api/v1/me`, { method: "PATCH", headers: { origin: "https://unrelated.example.com", "content-type": "application/json" }, body: "{}" }));
+  assert.equal(deniedOrigin.status, 403);
+  const oversized = await http(new Request(`${base}/api/v1/me`, { method: "PATCH", headers: { origin: base, "content-type": "application/json" }, body: "x".repeat(6 * 1024 * 1024 + 1) }));
+  assert.equal(oversized.status, 413);
   const cookie = await login(emails[0]),
     one = await login(emails[1]),
     two = await login(emails[2]);
@@ -300,7 +319,7 @@ test("closed registration, chat invariants, access control, blocking and OIDC", 
     code_challenge: challenge,
     code_challenge_method: "S256",
   });
-  const authorize = await auth.handler(
+  const authorize = await http(
     new Request(`${discovery.authorization_endpoint}?${q}`, {
       headers: { cookie: one, accept: "text/html" },
     }),
@@ -316,7 +335,7 @@ test("closed registration, chat invariants, access control, blocking and OIDC", 
   );
   const authCode = new URL(location).searchParams.get("code");
   assert.ok(authCode);
-  const token = await auth.handler(
+  const token = await http(
     new Request(discovery.token_endpoint, {
       method: "POST",
       headers: {
@@ -334,7 +353,7 @@ test("closed registration, chat invariants, access control, blocking and OIDC", 
   assert.equal(token.status, 200, await token.clone().text());
   const tokens = await token.json();
   assert.ok(tokens.id_token);
-  const info = await auth.handler(
+  const info = await http(
     new Request(discovery.userinfo_endpoint, {
       headers: { authorization: `Bearer ${tokens.access_token}` },
     }),
@@ -349,7 +368,7 @@ test("closed registration, chat invariants, access control, blocking and OIDC", 
   // A user without a Beacon session must return to the OIDC client after OTP login.
   const freshQuery = new URLSearchParams(q);
   freshQuery.set("state", "fresh-login-state");
-  const needsLogin = await auth.handler(new Request(`${discovery.authorization_endpoint}?${freshQuery}`, {
+  const needsLogin = await http(new Request(`${discovery.authorization_endpoint}?${freshQuery}`, {
     headers: { accept: "text/html" },
   }));
   const loginLocation = new URL(needsLogin.headers.get("location")!, base);

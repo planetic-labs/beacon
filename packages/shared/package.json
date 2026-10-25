@@ -1,0 +1,11 @@
+{
+  "name": "@beacon/shared",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {},
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "exports": "./src/index.ts"
+}

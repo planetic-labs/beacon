@@ -3,11 +3,11 @@ import { createECDH, randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { v7 } from "uuid";
 import webpush from "web-push";
-import { db } from "../src/db";
-import { auth } from "../src/modules/auth/config";
-import { subscribe } from "../src/modules/push/service";
-import { deliverPushBatch } from "../src/modules/push/worker";
-import { GET,POST,PATCH,DELETE } from "../src/app/api/push/[[...path]]/route";
+import { db } from "../apps/api/src/db";
+import { auth } from "../apps/api/src/modules/auth/config";
+import { subscribe } from "../apps/api/src/modules/push/service";
+import { deliverPushBatch } from "../apps/api/src/modules/push/worker";
+import { GET,POST,PATCH,DELETE } from "../apps/api/src/http/controllers/push";
 
 export async function pushScenarios(ids:string[],cookies:string[],chatId:string,groupId:string,
   call:(path:string,method?:string,body?:unknown,cookie?:string)=>Promise<Response>) {
@@ -19,7 +19,7 @@ export async function pushScenarios(ids:string[],cookies:string[],chatId:string,
     const parts=(q<0?path:path.slice(0,q)).split("/").filter(Boolean);
     return ({GET,POST,PATCH,DELETE} as Record<string,typeof GET>)[method](new Request(`${base}/api/push${path}`,{
       method,headers:{cookie,origin,"content-type":"application/json"},...(data?{body:JSON.stringify(data)}:{})
-    }),{params:Promise.resolve({path:parts})});
+    }),parts);
   };
   const input=()=>{
     const ecdh=createECDH("prime256v1");ecdh.generateKeys();

@@ -71,6 +71,13 @@ try {
   ).toBeVisible();
   await a.getByRole("button", { name: /Чат для технических моментов/ }).click();
   await b.getByRole("button", { name: /Чат для технических моментов/ }).click();
+  await expect(a).toHaveURL(new RegExp(`/chats/${fixtures.chatId}$`));
+  await a.reload();
+  await expect(a.locator(".chat-header-title")).toHaveText("Чат для технических моментов");
+  await a.locator(".nav-rail").getByRole("button", { name: "Профиль", exact: true }).click();
+  await expect(a).toHaveURL(/\/profile$/);
+  await a.goBack();
+  await expect(a.locator(".chat-header-title")).toHaveText("Чат для технических моментов");
   await expect(a.locator(".bubble-text").first()).toContainText(
     "Добро пожаловать",
   );

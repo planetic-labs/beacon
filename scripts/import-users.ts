@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { z } from "zod";
-import { pool } from "../src/db";
+import { pool } from "../apps/api/src/db";
 
 // Input and the ID mapping must remain outside the repository.
 const inputSchema = z.array(z.object({
