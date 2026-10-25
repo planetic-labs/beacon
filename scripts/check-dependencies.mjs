@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 
 // Run both checks even when the first one reports available updates.
 const checks = [
-  ["Доступные обновления (включая новые основные версии)", ["outdated", "--long"]],
+  ["Доступные обновления (включая новые основные версии)", ["outdated", "--recursive", "--long"]],
   ["Аудит безопасности всех зависимостей, включая зависимости разработки", ["audit", "--audit-level", "low"]],
 ];
 let failed = false;

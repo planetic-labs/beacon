@@ -2,7 +2,7 @@ import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import {runInNewContext} from "node:vm";
-import {subscriptionInput} from "../src/modules/push/config";
+import {subscriptionInput} from "../apps/api/src/modules/push/config";
 import {createECDH,randomBytes} from "node:crypto";
 
 test("push endpoints cannot address private services or unrelated hosts",()=>{
@@ -24,7 +24,7 @@ test("service worker displays only freshly authorized messages and opens their c
   const self={location:{origin:"https://beacon.example.com"},addEventListener:(name:string,fn:any)=>{handlers[name]=fn},
     clients:{matchAll:async()=>[client],openWindow:async(url:string)=>opened.push(url)},
     registration:{showNotification:async(title:string,options:any)=>{notifications.push({title,...options})}}};
-  runInNewContext(await readFile("public/sw.js","utf8"),{self,URL,URLSearchParams,fetch:async()=>{
+  runInNewContext(await readFile("apps/web/public/sw.js","utf8"),{self,URL,URLSearchParams,fetch:async()=>{
     requests++;return Response.json(authorized?{title:"Beacon",body:"Новое сообщение",chatId}:null);
   }});
   async function dispatch(name:string,data:any){let work:Promise<unknown>|undefined;handlers[name]({...data,waitUntil:(p:Promise<unknown>)=>{work=p}});await work;}

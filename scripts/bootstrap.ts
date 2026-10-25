@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { db, pool } from "../src/db";
+import { db, pool } from "../apps/api/src/db";
 const emails = [
   ...new Set(
     (process.env.INITIAL_ADMIN_EMAILS ?? "")

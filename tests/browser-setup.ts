@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import { writeFile } from "node:fs/promises";
 import { makeSignature } from "better-auth/crypto";
-import { db, pool } from "../src/db";
-import { auth } from "../src/modules/auth/config";
-import { createChat, send } from "../src/modules/chat/service";
+import { db, pool } from "../apps/api/src/db";
+import { auth } from "../apps/api/src/modules/auth/config";
+import { createChat, send } from "../apps/api/src/modules/chat/service";
 import { v7 } from "uuid";
 if (process.env.APP_ENV !== "test")
   throw new Error("Disposable test environment required");

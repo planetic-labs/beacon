@@ -62,3 +62,14 @@ compose stop realtime
 docker run --rm --network host --env-file "$config" \
   -v "$runtime:/run/test" beacon-browser \
   pnpm exec tsx tests/browser-push.ts
+# Validate the same-port Vite development setup separately from production.
+cat > "$runtime/docker-compose.dev-check.yml" <<'EOF'
+services:
+  web:
+    command: [pnpm, dev]
+EOF
+docker compose -p "$project" --env-file "$config" -f docker-compose.yml -f "$override" \
+  -f "$runtime/docker-compose.dev-check.yml" up -d --no-deps --wait --wait-timeout 90 web
+docker run --rm --network host --env-file "$config" \
+  -v "$runtime:/run/test" beacon-browser \
+  pnpm exec tsx tests/browser-dev.ts

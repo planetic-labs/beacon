@@ -32,3 +32,5 @@ imports
 coverage
 *.log
 *.tsbuildinfo
+
+**/dist/

@@ -1,12 +1,12 @@
 import { createServer } from "node:http";
 import { Server } from "socket.io";
 import pg from "pg";
-import { auth } from "../src/modules/auth/config";
-import { actor } from "../src/lib/http";
-import { db, pool } from "../src/db";
+import { auth } from "../apps/api/src/modules/auth/config";
+import { actor } from "../apps/api/src/lib/http";
+import { db, pool } from "../apps/api/src/db";
 import { sql } from "drizzle-orm";
-import { rows } from "../src/modules/chat/service";
-import { deliverPushBatch } from "../src/modules/push/worker";
+import { rows } from "../apps/api/src/modules/chat/service";
+import { deliverPushBatch } from "../apps/api/src/modules/push/worker";
 const http = createServer((_, res) => {
   res.writeHead(200);
   res.end("ok");

@@ -1,6 +1,9 @@
+packages:
+  - apps/*
+  - packages/*
+
 allowBuilds:
   esbuild: true
-  sharp: true
 # Drizzle's legacy loader still requests a vulnerable esbuild release.
 # Keep this override until the loader is replaced upstream.
 overrides:
