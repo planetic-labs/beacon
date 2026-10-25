@@ -1,0 +1,42 @@
+version: 2
+
+multi-ecosystem-groups:
+  dependencies:
+    schedule:
+      interval: daily
+      time: '06:00'
+      timezone: Europe/Moscow
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    patterns: ['*']
+    multi-ecosystem-group: dependencies
+    open-pull-requests-limit: 1
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ['*']
+  - package-ecosystem: docker
+    directory: /
+    patterns: ['*']
+    multi-ecosystem-group: dependencies
+    # Runtime major versions are deliberate project requirements.
+    ignore:
+      - dependency-name: beacon-tooling
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
+      - dependency-name: postgres
+        update-types: ['version-update:semver-major']
+  - package-ecosystem: docker-compose
+    directory: /
+    patterns: ['*']
+    multi-ecosystem-group: dependencies
+    ignore:
+      - dependency-name: 'beacon-*'
+      - dependency-name: postgres
+        update-types: ['version-update:semver-major']
+  - package-ecosystem: github-actions
+    directory: /
+    patterns: ['*']
+    multi-ecosystem-group: dependencies
