@@ -316,7 +316,7 @@ button:disabled {
 
 .message-photo { display: block; max-width: min(320px, 100%); max-height: 400px; border-radius: 12px; object-fit: contain; }
 .photo-preview { display: flex; align-items: center; gap: 10px; padding: 10px; min-width: 0; }
-.photo-preview img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; }
+.photo-preview img, .photo-preview canvas { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; }
 .photo-preview span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .photo-previews { display: flex; gap: 4px; overflow-x: auto; max-width: 100%; }

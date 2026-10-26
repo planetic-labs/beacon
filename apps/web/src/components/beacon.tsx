@@ -11,6 +11,7 @@ import { io, Socket } from "socket.io-client";
 import { useLocation, useNavigate, useSearch } from "@tanstack/react-router";
 import { v7 } from "uuid";
 import { authClient, beginPasskeyAutofill } from "@/auth-client";
+import { PhotoThumbnail } from "./photo-thumbnail";
 import { RecordingDialog } from "./recording";
 import { StickerAdmin, StickerPicker, StickerSuggestions } from "./stickers";
 import { Icon } from "./icon";
@@ -24,14 +25,8 @@ export function Beacon(): ReactNode {
   const [recordingKind, setRecordingKind] = useState<RecordingKind | null>(null);
   const [stickersOpen, setStickersOpen] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
-  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
   const photoMessageId = useRef(v7());
   const photoInput = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    const urls = photos.map(photo => URL.createObjectURL(photo));
-    setPhotoPreviews(urls);
-    return () => urls.forEach(url => URL.revokeObjectURL(url));
-  }, [photos]);
   const [upcomingService, setUpcomingService] = useState<string | null>(null);
   const stopPasskeyAutofill = useRef<(() => void) | null>(null);
   const navigate = useNavigate();
@@ -1156,7 +1151,7 @@ export function Beacon(): ReactNode {
                         </button>
                       </div>
                     )}
-                    {!!photos.length && <div className="photo-previews">{photos.map((photo, index) => <div className="photo-preview" key={index}><img src={photoPreviews[index]} alt={`Фото к отправке ${index + 1}`} /><button type="button" aria-label={`Убрать фото ${index + 1}`} disabled={busy} onClick={() => { photoMessageId.current = v7(); setPhotos(items => items.filter((_, i) => i !== index)); }}>Убрать</button></div>)}</div>}
+                    {!!photos.length && <div className="photo-previews">{photos.map((photo, index) => <div className="photo-preview" key={index}><PhotoThumbnail file={photo} index={index} /><button type="button" aria-label={`Убрать фото ${index + 1}`} disabled={busy} onClick={() => { photoMessageId.current = v7(); setPhotos(items => items.filter((_, i) => i !== index)); }}>Убрать</button></div>)}</div>}
                     <div className="composer-body">
                       <label className="sr-only" htmlFor="composer">
                         Сообщение

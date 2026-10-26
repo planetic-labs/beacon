@@ -23,7 +23,7 @@ async function refresh(userId: string) {
     if (response.status === 401) { cache.delete(userId); try { localStorage.removeItem(storageKey(userId)); } catch {} window.dispatchEvent(new Event("beacon:unauthorized")); }
     if (response.status === 304) return;
     if (!response.ok) throw new Error("Не удалось загрузить стикеры");
-    const value: Catalog = { packs: await response.json(), etag: response.headers.get("ETag") ?? undefined };
+    const value: Catalog = { packs: stickerCatalogSchema.parse(await response.json()), etag: response.headers.get("ETag") ?? undefined };
     cache.set(userId, value);
     try { localStorage.setItem(storageKey(userId), JSON.stringify(value)); } catch { /* The in-memory cache still works. */ }
     window.dispatchEvent(new Event("beacon:sticker-catalog"));

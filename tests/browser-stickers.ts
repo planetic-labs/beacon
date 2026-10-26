@@ -51,6 +51,16 @@ try {
     await context.route("**/socket.io/**", route => route.abort());
     await context.route("**/media/**", route => route.fulfill({ contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64") }));
     await page.goto(`${base}/chats/${chatId}`);
+    const previewPng = Buffer.from(await page.evaluate<string>(`(() => { const canvas = document.createElement('canvas'); canvas.width = canvas.height = 4; const context = canvas.getContext('2d'); context.fillStyle = 'red'; context.fillRect(0, 0, 4, 4); return canvas.toDataURL('image/png').split(',')[1]; })()`), "base64");
+    await page.getByLabel("Выбрать фото", { exact: true }).setInputFiles([
+      { name: "first.png", mimeType: "image/png", buffer: previewPng },
+      { name: "second.png", mimeType: "image/png", buffer: previewPng },
+    ]);
+    await expect(page.locator('.photo-preview canvas[data-ready="true"]')).toHaveCount(2);
+    await page.getByRole("button", { name: "Убрать фото 2", exact: true }).click();
+    await page.getByRole("button", { name: "Убрать фото 1", exact: true }).click();
+    await expect(page.locator(".photo-preview")).toHaveCount(0);
+
     await page.getByRole("button", { name: "Выбрать стикер", exact: true }).click();
     await page.getByRole("button", { name: "Тестовый набор", exact: true }).click();
     await page.getByRole("textbox", { name: "Поиск стикеров", exact: true }).fill("👋");
