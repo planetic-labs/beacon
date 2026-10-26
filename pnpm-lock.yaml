@@ -144,6 +144,9 @@ importers:
       better-auth:
         specifier: 1.7.12
         version: 1.7.12(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@types/pg@8.23.1)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      emoji-picker-react:
+        specifier: 5.1.4
+        version: 5.1.4(react@19.3.1)
       fuse.js:
         specifier: 7.5.0
         version: 7.5.0
@@ -1449,6 +1452,12 @@ packages:
   ecdsa-sig-formatter@1.0.11:
     resolution: {integrity: sha512-nagl3RYrbNv6kQkeJIpt6NJZy8twLB/2vtz6yN9Z4vRKHN4/QZJIEbqohALSgwKdnksuY3k5Addp5lg8sVoVcQ==}
 
+  emoji-picker-react@5.1.4:
+    resolution: {integrity: sha512-kWBAgDCFPcRJrINeRE7/o7VAVNc0Yeg1n7gMHSvJ54qffidCV8Jdmeb9iEHkx1CtClzhnutCax8bQFDTHAbyTg==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      react: '>=16.8'
+
   emoji-regex@11.0.0:
     resolution: {integrity: sha512-2qQtc7syPcJmvF7BfKxBvwgvhzDth6u3q23+Jr4JOQUcmMGgmj7B4/ePZ2DmOhrrb77S8kMNHq2kilVASysfqA==}
 
@@ -1906,6 +1915,9 @@ packages:
     peerDependenciesMeta:
       '@types/node':
         optional: true
+
+  shipstyles@1.0.0:
+    resolution: {integrity: sha512-1AcihfXo/mSxqeOdoKqq/5TNv+vSH0dBYPFq88PUX5FBkK5pRmY5TP9SuMNio85PQ+euUI67+KpSVk1cUVDCgA==}
 
   socket.io-adapter@2.5.8:
     resolution: {integrity: sha512-6Oy52pbg+kvdCVvjcN+FnY7BvxZ7cIHNScbvztT/It5d0vbwoJoVZmF2gjJmnV0/4WlXRfG15zc45ySk9Ah8bw==}
@@ -2924,6 +2936,11 @@ snapshots:
     dependencies:
       safe-buffer: 5.2.1
 
+  emoji-picker-react@5.1.4(react@19.3.1):
+    dependencies:
+      react: 19.3.1
+      shipstyles: 1.0.0
+
   emoji-regex@11.0.0: {}
 
   engine.io-client@6.6.7:
@@ -3424,6 +3441,8 @@ snapshots:
       '@img/sharp-win32-ia32': 0.35.5
       '@img/sharp-win32-x64': 0.35.5
       '@types/node': 26.6.5
+
+  shipstyles@1.0.0: {}
 
   socket.io-adapter@2.5.8:
     dependencies:

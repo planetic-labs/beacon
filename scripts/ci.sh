@@ -50,6 +50,7 @@ docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-features.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-attachments.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-community-chats.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-media.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-emoji.ts
 # Native recording UI checks use fake devices and synthetic API responses.
 docker run --rm beacon-browser pnpm exec tsx tests/browser-recordings.ts
 docker run --rm --user "$(id -u):$(id -g)" -v "$runtime:/run/config" beacon-tooling \

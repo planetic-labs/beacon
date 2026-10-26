@@ -517,3 +517,14 @@ button:disabled {
 .group-settings-form { display:grid; gap:12px; width:100%; }
 
 .group-settings-form textarea { width:100%; min-height:96px; resize:vertical; padding:11px 13px; border:1px solid #d5d9e4; border-radius:13px; color:var(--ink); background:#fff; font:inherit; }
+
+.emoji-dialog-backdrop { background:transparent; align-items:flex-end; justify-content:flex-end; padding:16px 24px 155px; }
+.emoji-dialog { width:360px; max-width:calc(100vw - 24px); padding:12px; border-radius:18px; box-shadow:0 12px 48px #171d3433; }
+.emoji-menu-body { height:min(420px, 55dvh); min-height:220px; }
+.emoji-menu-body [data-epr-part="root"] { --epr-bg-color:#fff; --epr-picker-border-color:transparent; --epr-highlight-color:#3758e8; --epr-search-input-bg-color:#f3f4f9; --epr-emoji-size:28px; }
+.emoji-menu-status { display:grid; align-content:center; justify-items:center; gap:12px; height:100%; text-align:center; color:var(--muted); }
+@media(max-width:780px) {
+  .emoji-dialog-backdrop { padding:0; justify-content:center; background:#171d3426; }
+  .emoji-dialog { width:100%; max-width:100%; border-radius:20px 20px 0 0; margin:0; padding:12px 10px max(12px, env(safe-area-inset-bottom)); }
+  .emoji-menu-body { height:min(430px, 60dvh); }
+}
