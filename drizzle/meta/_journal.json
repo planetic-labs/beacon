@@ -50,6 +50,20 @@
       "when": 1792935077049,
       "tag": "0006_sparkling_maelstrom",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793025574264,
+      "tag": "0007_natural_robin_chapel",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793031482512,
+      "tag": "0008_military_vision",
+      "breakpoints": true
     }
   ]
 }

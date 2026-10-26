@@ -1,4 +1,5 @@
 FROM node:26-trixie-slim AS base
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 RUN npm install --global pnpm@11.28.8
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./

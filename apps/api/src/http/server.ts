@@ -6,6 +6,9 @@ import { fromNodeHeaders } from "better-auth/node";
 import { GET as v1, POST as v1Post, PATCH as v1Patch } from "./controllers/v1";
 import { GET as authGet, POST as authPost } from "./controllers/auth";
 import { GET as pushGet, POST as pushPost, PATCH as pushPatch, DELETE as pushDelete } from "./controllers/push";
+import { handler as stickers } from "./controllers/stickers";
+import { POST as recording } from "./controllers/recording";
+import { POST as photo } from "./controllers/photo";
 import { POST as avatar } from "./controllers/avatar";
 import { GET as media } from "./controllers/media";
 import { GET as health } from "./controllers/health";
@@ -67,6 +70,14 @@ export async function createApp(options: { dev?: boolean; serveWeb?: boolean } =
     app.route({ method, url: "/api/push/*", handler: run });
   }
   app.post("/api/avatar", bridge(avatar));
+  for (const method of ["GET", "POST", "PATCH"] as const) {
+    app.route({ method, url: "/api/stickers", bodyLimit: 101 * 1024 * 1024, handler: bridge(stickers) });
+    app.route({ method, url: "/api/stickers/:id", bodyLimit: 101 * 1024 * 1024, handler: bridge(stickers) });
+  }
+  app.delete("/api/stickers/:id/stickers/:stickerId", bridge(stickers));
+  app.patch("/api/stickers/:id/stickers/:stickerId", bridge(stickers));
+  app.post("/api/recordings", { bodyLimit: 26 * 1024 * 1024 }, bridge(recording));
+  app.post("/api/photos", { bodyLimit: 51 * 1024 * 1024 }, bridge(photo));
   app.get("/media/:id", bridge(request => media(request,
     decodeURIComponent(new URL(request.url).pathname.slice("/media/".length)),
   )));

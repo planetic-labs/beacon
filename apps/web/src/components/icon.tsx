@@ -6,7 +6,14 @@ import {
   Compass,
   FolderOpen,
   Heart,
+  House,
+  ImagePlus,
+  Sticker,
   Library,
+  Mic,
+  Play,
+  Pause,
+  Video,
   MessageCircle,
   MoreHorizontal,
   Plus,
@@ -18,6 +25,13 @@ import {
 } from "lucide-react";
 
 const icons = {
+  play: Play,
+  pause: Pause,
+  mic: Mic,
+  video: Video,
+  sticker: Sticker,
+  photo: ImagePlus,
+  home: House,
   plus: Plus,
   users: UsersRound,
   chats: MessageCircle,

@@ -152,8 +152,17 @@ try {
       automaticPresenceSimulation: true,
     },
   });
+  const profile = await (await a.request.get(`${base}/api/v1/me`)).json();
+  const optionsResponse = a.waitForResponse(response => new URL(response.url()).pathname.endsWith("/passkey/generate-register-options"));
   await a.getByRole("button", { name: "Добавить ключ доступа" }).click();
-  await expect(a.getByText("Мой ключ доступа", { exact: true })).toBeVisible();
+  const registrationOptions = await (await optionsResponse).json();
+  assert.equal(registrationOptions.user.name, profile.email);
+  assert.equal(registrationOptions.user.displayName, profile.email);
+  await expect(a.locator(".passkey-row")).toContainText("Linux · Chrome");
+  await a.getByRole("button", { name: "Переименовать", exact: true }).click();
+  await a.getByRole("textbox", { name: "Название ключа", exact: true }).fill("Тестовый ключ");
+  await a.getByRole("button", { name: "Сохранить название", exact: true }).click();
+  await expect(a.locator(".passkey-row")).toContainText("Тестовый ключ");
   // Headless Chromium has no autofill picker. Keep real WebAuthn signing and
   // server verification, but let the virtual authenticator answer the conditional request.
   await a.evaluate(`(() => {

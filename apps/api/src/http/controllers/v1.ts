@@ -104,6 +104,7 @@ async function handler(
               text: z.string().max(10000),
               replyToId: uuid.optional(),
               forwardId: uuid.optional(),
+              stickerId: uuid.optional(),
             })
             .parse(data);
           return ok(await send(u, chatId, input));
@@ -229,7 +230,10 @@ async function handler(
         } else {
           if (m.author_id !== u.id)
             throw new HttpError(403, "Можно менять только свои сообщения");
-          const content = messageTypes.text.validate.parse(data);
+          if (!["text", "photo"].includes(m.type)) throw new HttpError(400, "Этот тип сообщения нельзя редактировать");
+          const content = m.type === "photo"
+            ? messageTypes.photo.validate.parse({ ...data, fileId: m.content.fileId, fileIds: m.content.fileIds })
+            : messageTypes.text.validate.parse(data);
           await tx.execute(
             sql`update message set content=${JSON.stringify(content)}::jsonb,edited_at=now() where id=${id}`,
           );
