@@ -4,6 +4,10 @@ on:
   pull_request_target:
     branches: [main]
     types: [closed]
+  # Bot merges made with GITHUB_TOKEN may not emit a new closed-event workflow.
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
 
 permissions: {}
 
@@ -32,7 +36,7 @@ jobs:
           const branch = PR_BRANCH.split('/').map(encodeURIComponent).join('/');
           const root = `${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/git`;
           async function request(path, method = 'GET') {
-            return fetch(`${root}/${path}`, {
+            return fetch(path ? `${root}/${path}` : root, {
               method,
               headers: { authorization: `Bearer ${GH_TOKEN}`, accept: 'application/vnd.github+json' },
               signal: AbortSignal.timeout(15000),
@@ -54,4 +58,64 @@ jobs:
               console.log('Merged branch deleted.');
             }
           }
+          NODE
+
+  sweep-merged-branches:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      # No checkout and no execution of code from a PR, including on manual runs.
+      - name: Sweep unchanged branches of merged pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'NODE'
+          const { GITHUB_API_URL, GITHUB_REPOSITORY, GH_TOKEN } = process.env;
+          const root = `${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}`;
+          async function request(path, method = 'GET') {
+            return fetch(path ? `${root}/${path}` : root, {
+              method,
+              headers: { authorization: `Bearer ${GH_TOKEN}`, accept: 'application/vnd.github+json' },
+              signal: AbortSignal.timeout(15000),
+            });
+          }
+          async function json(path) {
+            const response = await request(path);
+            if (!response.ok) throw new Error(`Cannot inspect repository data: HTTP ${response.status}`);
+            return response.json();
+          }
+          const repository = await json('');
+          const base = repository.default_branch;
+          // Bound each sweep to the 100 most recently updated closed PRs.
+          const pulls = await json(`pulls?state=closed&base=${encodeURIComponent(base)}&sort=updated&direction=desc&per_page=100`);
+          let removed = 0;
+          for (const pr of pulls) {
+            const branch = pr.head.ref;
+            if (!pr.merged_at || pr.head.repo?.full_name !== GITHUB_REPOSITORY ||
+                branch === base || branch === pr.base.ref || branch === 'main') continue;
+            const path = branch.split('/').map(encodeURIComponent).join('/');
+            const current = await request(`git/ref/heads/${path}`);
+            if (current.status === 404) continue;
+            if (!current.ok) throw new Error(`Cannot inspect branch: HTTP ${current.status}`);
+            if ((await current.json()).object.sha !== pr.head.sha) continue;
+            // A later PR may reuse an old branch even without a new commit.
+            const head = encodeURIComponent(`${repository.owner.login}:${branch}`);
+            const open = await json(`pulls?state=open&head=${head}&per_page=1`);
+            if (open.length) continue;
+            // Recheck after querying open PRs before performing the deletion.
+            const latest = await request(`git/ref/heads/${path}`);
+            if (latest.status === 404) continue;
+            if (!latest.ok) throw new Error(`Cannot recheck branch: HTTP ${latest.status}`);
+            if ((await latest.json()).object.sha !== pr.head.sha) continue;
+            const deleted = await request(`git/refs/heads/${path}`, 'DELETE');
+            if (!deleted.ok && deleted.status !== 404) {
+              throw new Error(`Cannot delete branch: HTTP ${deleted.status}`);
+            }
+            removed++;
+          }
+          console.log(`Removed merged branches: ${removed}`);
           NODE
