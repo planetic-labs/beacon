@@ -1,3 +1,4 @@
+import { EmojiMenu } from "./emoji-menu";
 import { useDraftSync } from "./drafts";
 import { PhotoViewer, type PhotoTarget } from "./photo-viewer";
 import { ChatAttachments } from "./chat-attachments";
@@ -50,6 +51,8 @@ export function Beacon(): ReactNode {
   const historicalRef = useRef(false), jumpRequest = useRef<{chatId:string;messageId:string}|null>(null);
   const [recordingKind, setRecordingKind] = useState<RecordingKind | null>(null);
   const [stickersOpen, setStickersOpen] = useState(false);
+  const [emojiOpen,setEmojiOpen]=useState(false);
+  const emojiSelection=useRef({start:0,end:0});
   const [photos, setPhotos] = useState<File[]>([]);
   const photoMessageId = useRef(v7());
   const photoInput = useRef<HTMLInputElement>(null);
@@ -246,6 +249,7 @@ export function Beacon(): ReactNode {
     }
   }, []);
   const openChat = (id: string) => {
+    setEmojiOpen(false);
     if (selectedRef.current && context?.kind!=="edit") { drafts.current[selectedRef.current] = draft; mentionDrafts.current[selectedRef.current]=mentions.current; }
     historyVersion.current++;aroundBusy.current=false;historicalRef.current=false;setHistorical(false);
     setSelected(id);
@@ -863,6 +867,14 @@ export function Beacon(): ReactNode {
       </button>
     </aside>
   );
+  function chooseEmoji(emoji:string){
+    const before=draftValue.current;
+    const start=Math.min(emojiSelection.current.start,before.length),end=Math.min(emojiSelection.current.end,before.length);
+    if(before.length-(end-start)+emoji.length>10000){notify(new Error("В сообщении может быть до 10 000 символов"));return;}
+    setDraft(before.slice(0,start)+emoji+before.slice(end));
+    const cursor=start+emoji.length;emojiSelection.current={start:cursor,end:cursor};
+    requestAnimationFrame(()=>textarea.current?.setSelectionRange(cursor,cursor));
+  }
   function chooseContext(kind: "reply" | "edit", m: Message) {
     if (kind === "edit") {
       if (selected) {drafts.current[selected] = draft;mentionDrafts.current[selected]=mentions.current;}
@@ -1309,9 +1321,13 @@ export function Beacon(): ReactNode {
                         className="composer-action"
                         type="button"
                         aria-label="Добавить эмодзи"
+                        disabled={busy}
+                        aria-haspopup="dialog"
+                        aria-expanded={emojiOpen}
                         onClick={() => {
-                          setDraft((d) => d + "❤️");
-                          textarea.current?.focus();
+                          const input=textarea.current;
+                          emojiSelection.current={start:input?.selectionStart??draft.length,end:input?.selectionEnd??draft.length};
+                          setEmojiOpen(true);
                         }}
                       >
                         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1521,6 +1537,7 @@ export function Beacon(): ReactNode {
       {readDetails&&<ReadDetails key={readDetails.id} messageId={readDetails.id} chatId={readDetails.chatId} socket={socket} close={()=>setReadDetails(null)}/>}
       {photoView&&<PhotoViewer key={`${photoView.chatId}:${photoView.messageId}`} target={photoView} socket={socket} close={()=>setPhotoView(null)}/>}
       {deleting&&<Dialog title="Удалить сообщение?" close={()=>{if(!deleteBusy)setDeleting(null);}}><p>Сообщение будет удалено у всех участников переписки.</p><div className="inline-actions"><button type="button" className="primary-button" disabled={deleteBusy} onClick={()=>void removeMessage()}>{deleteBusy?"Удаляем…":"Удалить"}</button><button type="button" className="secondary-button" disabled={deleteBusy} onClick={()=>setDeleting(null)}>Отмена</button></div></Dialog>}
+      {emojiOpen&&selected&&section==="chats"&&<EmojiMenu userId={me.id} choose={chooseEmoji} close={()=>setEmojiOpen(false)}/>}
       {attachment&&<AttachmentUpload key={`${attachment.chatId}:${attachment.file.name}`} {...attachment} replyToId={context?.kind==="reply"?context.message.id:undefined} close={()=>setAttachment(null)} notify={notify} sent={async id=>{if(selectedRef.current===id){setContext(null);await refreshHistory(id);}await refreshLists();}}/>}
       {recordingKind && selected && <RecordingDialog key={`${selected}:${recordingKind}`} kind={recordingKind} activity={recording} chatId={selected} replyToId={context?.kind === "reply" ? context.message.id : undefined} notify={notify} close={() => setRecordingKind(null)} sent={async chatId => {
         if (selectedRef.current === chatId) { setContext(null); await refreshHistory(chatId); }
