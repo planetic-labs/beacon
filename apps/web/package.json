@@ -10,7 +10,7 @@
     "@beacon/shared": "workspace:*",
     "@better-auth/oauth-provider": "1.7.12",
     "@better-auth/passkey": "1.7.12",
-    "@simplewebauthn/browser": "13.3.0",
+    "@simplewebauthn/browser": "14.0.0",
     "@tanstack/react-router": "1.170.46",
     "better-auth": "1.7.12",
     "lucide-react": "1.61.0",
