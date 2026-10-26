@@ -1,3 +1,8 @@
+import { chatPreferencesScenarios } from "./chat-preferences-scenarios";
+import { chatMediaScenarios } from "./chat-media-scenarios";
+import { communityChatScenarios } from "./community-chat-scenarios";
+import { attachmentScenarios } from "./attachment-scenarios";
+import { chatFeatureScenarios } from "./chat-feature-scenarios";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -684,6 +689,11 @@ test("closed registration, chat invariants, access control, blocking and OIDC", 
     assert.equal(forwarded.status, 200);
     assert.equal((await call("chats", "GET", undefined, one)).status, 200);
   }
+  await chatFeatureScenarios(ids,[cookie,one,two],chatId,group,call);
+  await attachmentScenarios(http,call,[cookie,one,two],chatId,group);
+  await communityChatScenarios(ids,[cookie,one,two],chatId,group,call);
+  await chatMediaScenarios(http,call,ids,[cookie,one,two]);
+  await chatPreferencesScenarios(ids,[cookie,one,two],call);
   await pushScenarios(ids,[cookie,one,two],chatId,group,call);
   const block = await call(
     `admin/users/${ids[2]}`,

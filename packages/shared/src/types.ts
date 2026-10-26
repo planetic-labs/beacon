@@ -1,3 +1,4 @@
+import type { Mention } from "./chat-features";
 export type User = {
   groups?: { id: string; name: string; code: string }[];
   id: string;
@@ -11,8 +12,10 @@ export type User = {
 };
 export type Chat = {
   id: string;
-  kind: "direct" | "group";
+  kind: "direct" | "group" | "saved";
   peerId?: string;
+  pinned?: boolean;
+  description?: string;
   name: string;
   title: string;
   ownerId: string;
@@ -20,6 +23,8 @@ export type Chat = {
   preview?: string;
   lastAt?: string;
   unread: number;
+  unreadMentions?: number;
+  lastMessageId?: string;
 };
 export type Message = {
   type: string;
@@ -29,9 +34,11 @@ export type Message = {
   authorName: string;
   authorImage?: string;
   clientMessageId: string;
-  content: { text: string; fileId?: string; fileIds?: string[]; stickerId?: string; duration?: number };
+  content: { text: string; mentions?: Mention[]; fileId?: string; name?: string; size?: number; mime?: string; fileIds?: string[]; stickerId?: string; duration?: number };
   createdAt: string;
   editedAt?: string;
+  deletedAt?: string;
+  pinned?: boolean;
   replyToId?: string;
   reply?: { id: string; text: string; authorName: string };
   forwardedFrom?: { authorName: string };
@@ -43,7 +50,9 @@ export type Pending = {
   text: string;
   replyToId?: string;
   forwardId?: string;
+  forwards?: {forwardId:string;clientMessageId:string}[];
   stickerId?: string;
+  mentions?: Mention[];
   failed?: boolean;
 };
 export type Group = {
@@ -55,3 +64,7 @@ export type Group = {
 
 export type Sticker = { id: string; fileId: string; label: string; emojis?: string[]; keywords?: string[] };
 export type StickerPack = { id: string; name: string; active: boolean; stickers: Sticker[] };
+
+export type Pin = { id:string; authorName:string; text:string; type:string; pinnedBy:string; pinnedAt:string };
+export type PinPage = { pins:Pin[]; total:number; next?:{id:string;at:string} };
+export type Presence = { userId:string; online:boolean; lastSeenAt:string|null };

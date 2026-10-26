@@ -1,3 +1,4 @@
+import { mentionsSchema } from "@beacon/shared";
 import { actor, checkOrigin, HttpError } from "@api/lib/http";
 import { member, send } from "@api/modules/chat/service";
 import { imageMime, storage } from "@api/modules/media/storage";
@@ -16,8 +17,11 @@ export async function POST(request: Request) {
     if (!files.length || files.length > 10)
       throw new HttpError(400, "Можно отправить от 1 до 10 фотографий");
     const photos: { id: string; mime: string; size: number }[] = [];
-    const input = z.object({ clientMessageId: z.uuid(), text: z.string().max(10000), replyToId: z.uuid().optional() }).parse({
-      clientMessageId: form.get("clientMessageId"), text: form.get("text") ?? "",
+    let mentionInput: unknown;
+    try { mentionInput=JSON.parse(z.string().max(8192).parse(form.get("mentions")??"[]")); }
+    catch { throw new HttpError(400,"Проверьте упоминания"); }
+    const input = z.object({ clientMessageId: z.uuid(), text: z.string().max(10000), mentions: mentionsSchema.optional(), replyToId: z.uuid().optional() }).parse({
+      mentions: mentionInput, clientMessageId: form.get("clientMessageId"), text: form.get("text") ?? "",
       replyToId: form.get("replyToId") ?? undefined,
     });
     for (const file of files) {

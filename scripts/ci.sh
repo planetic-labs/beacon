@@ -45,6 +45,11 @@ docker build --target production -t beacon-production-check .
 docker build -f Dockerfile.test -t beacon-browser .
 # Static PWA lifecycle checks use synthetic API data and no database.
 docker run --rm beacon-browser pnpm exec tsx tests/browser-pwa.ts
+# Search, receipt and mention UI use synthetic users on desktop and mobile.
+docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-features.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-attachments.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-community-chats.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-media.ts
 # Native recording UI checks use fake devices and synthetic API responses.
 docker run --rm beacon-browser pnpm exec tsx tests/browser-recordings.ts
 docker run --rm --user "$(id -u):$(id -g)" -v "$runtime:/run/config" beacon-tooling \
@@ -56,9 +61,14 @@ compose run --rm --no-deps web pnpm audit --audit-level low
 compose run --rm --no-deps web pnpm test
 compose run --rm --no-deps web pnpm exec tsx tests/browser-setup.ts
 compose up -d --wait --wait-timeout 90 web realtime
+compose run --rm --no-deps -e TEST_API_URL=http://web:3000 -e TEST_SOCKET_URL=http://realtime:3001 web pnpm exec tsx tests/realtime-chat-features.ts
 docker run --rm --network host --env-file "$config" \
   -v "$runtime:/run/test" beacon-browser \
   pnpm exec tsx tests/browser.ts
+# Private draft/pin sync uses fresh disposable sessions before the authentication test revokes one.
+compose run --rm --no-deps web pnpm exec tsx tests/browser-setup.ts
+docker run --rm --network host --env-file "$config" -e TEST_SOCKET_URL=http://localhost:51031 \
+  -v "$runtime:/run/test" beacon-browser pnpm exec tsx tests/browser-chat-preferences.ts
 # The chat test revokes a fixture session while testing passkey login.
 compose run --rm --no-deps web pnpm exec tsx tests/browser-setup.ts
 # Registration is mocked in headless Chromium: never send it to a push gateway.

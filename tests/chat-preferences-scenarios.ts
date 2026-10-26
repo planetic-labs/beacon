@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+type Call=(path:string,method?:string,body?:unknown,cookie?:string)=>Promise<Response>;
+export async function chatPreferencesScenarios(ids:string[],cookies:string[],call:Call){
+ const [admin,one,two]=cookies;
+ const created=await call("chats","POST",{kind:"group",title:"Preferences",userIds:[ids[2]]},one);assert.equal(created.status,200);const {id}=await created.json();
+ assert.equal((await call(`chats/${id}`,"PATCH",{description:"Описание сообщества"},one)).status,200);
+ assert.equal((await call(`chats/${id}`,"PATCH",{description:"Нет прав"},two)).status,403);
+ assert.equal((await call(`chats/${id}`,"PATCH",{add:ids[0],title:"Mixed denied"},two)).status,403);
+ assert.equal((await call(`chats/${id}`,"PATCH",{add:ids[0]},two)).status,200,"ordinary member can add active users");
+ assert.equal((await call(`chats/${id}`,"PATCH",{add:ids[0]},two)).status,200,"add idempotent");
+ assert.equal((await(await call(`chats/${id}/members`,"GET",undefined,two)).json()).chat.description,"Описание сообщества");
+ const outside=(await(await call("chats","POST",{kind:"group",title:"Private",userIds:[ids[0]]},admin)).json()).id;
+ assert.equal((await call(`chats/${outside}`,"PATCH",{add:ids[1]},two)).status,403);
+ assert.equal((await call(`chats/${id}/pin`,"PATCH",{pinned:true},two)).status,200);
+ let list=await(await call("chats","GET",undefined,two)).json();assert.equal(list[0].id,id);assert.equal(list[0].pinned,true);
+ assert.equal((await(await call("chats","GET",undefined,one)).json()).find((c:{id:string})=>c.id===id).pinned,false);
+ assert.equal((await call(`chats/${outside}/pin`,"PATCH",{pinned:true},two)).status,403);
+ assert.equal((await call(`chats/${id}/pin`,"PATCH",{pinned:false},two)).status,200);
+ const draft={text:"Личный черновик",mentions:[],revision:0};
+ assert.equal((await call(`chats/${id}/draft`,"PATCH",draft,two)).status,200);
+ let rows=await(await call("drafts","GET",undefined,two)).json();const saved=rows.find((r:{chatId:string})=>r.chatId===id);assert.equal(saved.draft.text,draft.text);assert.equal(saved.revision,1);
+ assert.equal((await(await call("drafts","GET",undefined,one)).json()).find((r:{chatId:string})=>r.chatId===id).draft.text,"");
+ assert.equal((await call(`chats/${id}/draft`,"PATCH",{...draft,text:"Stale"},two)).status,409);
+ assert.equal((await call(`chats/${outside}/draft`,"PATCH",draft,two)).status,403);
+ assert.equal((await call(`chats/${id}/draft`,"PATCH",{text:"",mentions:[],revision:1},two)).status,200);
+ rows=await(await call("drafts","GET",undefined,two)).json();assert.equal(rows.find((r:{chatId:string})=>r.chatId===id).draft.text,"");
+ assert.equal((await call(`chats/${id}`,"PATCH",{description:""},one)).status,200);
+ await call(`chats/${id}`,"PATCH",{remove:ids[2]},one);
+ assert.equal((await(await call("drafts","GET",undefined,two)).json()).some((r:{chatId:string})=>r.chatId===id),false);
+ assert.equal((await call(`chats/${id}/draft`,"PATCH",{...draft,revision:2},two)).status,403);
+}
