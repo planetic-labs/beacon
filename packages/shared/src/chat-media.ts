@@ -10,8 +10,17 @@ export type MessageReceipt = {userId:string;name:string;image?:string;status:"se
 export function messageLinks(text:string):string[] {
   const links=new Set<string>();
   for(const match of text.matchAll(/https?:\/\/[^\s<>"\u0000-\u001f]+/giu)){
-    let value=match[0].replace(/[.,!?;:]+$/u,"");
-    for(const [left,right] of [["(",")"],["[","]"],["{","}"]])while(value.endsWith(right)&&value.split(right).length>value.split(left).length)value=value.slice(0,-1);
+    const raw=match[0];let end=raw.length;
+    // Trim with bounded linear scans; an unanchored suffix regexp retries every punctuation offset.
+    while(end>0&&".,!?;:".includes(raw[end-1]))end--;
+    const balance:Record<string,number>={")":0,"]":0,"}":0};
+    for(let i=0;i<end;i++){
+      const char=raw[i];
+      if(char==="(")balance[")"]--;else if(char==="[")balance["]"]--;else if(char==="{")balance["}"]--;
+      else if(Object.hasOwn(balance,char))balance[char]++;
+    }
+    while(end>0&&balance[raw[end-1]]>0){balance[raw[end-1]]--;end--;}
+    const value=raw.slice(0,end);
     try{const url=new URL(value);if(["http:","https:"].includes(url.protocol)&&!url.username&&!url.password)links.add(url.href);}catch{/* Not a valid web URL. */}
     if(links.size>=20)break;
   }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { createChatFixtures } from "./chat-fixtures";
 import { io, type Socket } from "socket.io-client";
 import { v7 } from "uuid";
 import { sql } from "drizzle-orm";
@@ -9,7 +9,7 @@ import { auth } from "../apps/api/src/modules/auth/config";
 if(process.env.APP_ENV!=="test")throw new Error("Disposable test environment required");
 const base=process.env.APP_URL!,socketUrl=process.env.TEST_SOCKET_URL??"http://localhost:3001";
 const apiBase=process.env.TEST_API_URL??base;
-const fixtures=JSON.parse(await readFile("/run/test/browser.json","utf8"));
+const fixtures=await createChatFixtures();
 const sockets:Socket[]=[];
 function wait(socket:Socket,event:string,predicate:(data:any)=>boolean=()=>true,timeout=5000):Promise<any>{return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{socket.off(event,handler);reject(new Error(`Timed out: ${event}`));},timeout);const handler=(data:any)=>{if(predicate(data)){clearTimeout(timer);socket.off(event,handler);resolve(data);}};socket.on(event,handler);});}
 try{

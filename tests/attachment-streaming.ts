@@ -1,11 +1,13 @@
 // Large uploads exercise real socket backpressure, never buffer a whole fixture in memory.
 import assert from "node:assert/strict";
 import { Readable } from "node:stream";
-import { readFile } from "node:fs/promises";
+import { createChatFixtures } from "./chat-fixtures";
+import { pool } from "../apps/api/src/db";
 import { v7 } from "uuid";
 if(process.env.APP_ENV!=="test")throw new Error("Disposable test deployment required");
 const base=process.env.APP_URL!;
-const fixtures=JSON.parse(await readFile("/run/test/browser.json","utf8"));
+const fixtures=await createChatFixtures();
+try{
 const cookie=(index:number)=>`${fixtures.users[index].cookieName}=${fixtures.users[index].cookieValue}`;
 async function upload(kind:"file"|"video",size:number, options:{signal?:AbortSignal;hold?:boolean}={}) {
  const boundary=`test-${v7()}`,clientId=v7();
@@ -33,3 +35,5 @@ assert.equal((await upload("file",128)).status,429,"bound concurrent uploads bef
 controllers.forEach(controller=>controller.abort());await Promise.all(pending);await new Promise(r=>setTimeout(r,250));
 assert.equal((await upload("file",128)).status,200,"cancelled uploads release concurrency slots");
 console.log(`PASS 500 MiB streaming video, partial download, 100 MiB limit and deletion (${Math.round((Date.now()-start)/1000)}s)`);
+
+}finally{await pool.end();}
