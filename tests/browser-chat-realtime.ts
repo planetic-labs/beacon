@@ -11,7 +11,18 @@ try{
  for(const user of fixtures.users){
   const context=await browser.newContext({viewport:{width:1440,height:900},permissions:["microphone","camera"],serviceWorkers:"block"});
   await context.addCookies([{name:user.cookieName,value:user.cookieValue,url:base}]);
-  await context.route("**/socket.io/**",async route=>{try{const url=new URL(route.request().url());url.port=new URL(socketUrl).port;const response=await route.fetch({url:url.toString(),headers:{...route.request().headers(),origin:base}});await route.fulfill({response});}catch{await route.abort();}});
+  await context.route("**/socket.io/**",async route=>{
+   const url=new URL(route.request().url());url.port=new URL(socketUrl).port;
+   let response;
+   try{response=await route.fetch({url:url.toString(),headers:{...route.request().headers(),origin:base}});}
+   catch{
+    // Navigation can cancel an intercepted request before this fallback runs.
+    try{await route.abort();}catch(error){if(!(error instanceof Error&&error.message.includes("Route is already handled")))throw error;}
+    return;
+   }
+   // Never try aborting a route after fulfill has claimed it.
+   await route.fulfill({response});
+  });
   contexts.push(context);
  }
  const [a,b]=await Promise.all(contexts.map(c=>c.newPage()));const errors:string[]=[];a.on("pageerror",e=>errors.push(e.message));b.on("pageerror",e=>errors.push(e.message));
@@ -83,4 +94,8 @@ try{
  await a.getByRole("dialog").getByRole("button",{name:"Закрыть",exact:true}).click();
  assert.deepEqual(errors,[]);await expect(a.getByRole("alert")).toHaveCount(0);await expect(b.getByRole("alert")).toHaveCount(0);
  console.log("PASS actual UI typing, recording, delivered/read, mentions, indexed search and deletion, pins, saved batch, foreground presence, live photo viewer and receipt times");
-}finally{await browser.close();}
+}finally{
+ // Drain route callbacks before closing contexts; application requests may still be in flight.
+ for(const context of browser.contexts())await context.unrouteAll({behavior:"wait"});
+ await browser.close();
+}
