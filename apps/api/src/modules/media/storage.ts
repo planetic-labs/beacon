@@ -1,7 +1,12 @@
-import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { mkdir, readFile, writeFile, unlink, open } from "node:fs/promises";
 import path from "node:path";
 export interface FileStorage {
   save(key: string, bytes: Uint8Array): Promise<void>;
+  saveStream(key: string, stream: Readable): Promise<void>;
+  readStream(key: string, start?: number, end?: number): Promise<Readable>;
   read(key: string): Promise<Uint8Array>;
   remove(key: string): Promise<void>;
 }
@@ -14,6 +19,14 @@ export class LocalStorage implements FileStorage {
   async save(key: string, bytes: Uint8Array) {
     await mkdir(this.root, { recursive: true });
     await writeFile(this.file(key), bytes, { flag: "wx", mode: 0o600 });
+  }
+  async saveStream(key: string, stream: Readable) {
+    await mkdir(this.root, { recursive: true });
+    await pipeline(stream, createWriteStream(this.file(key), { flags: "wx", mode: 0o600 }));
+  }
+  async readStream(key: string, start?: number, end?: number) {
+    const handle = await open(this.file(key), "r");
+    return handle.createReadStream({ start, end, autoClose: true });
   }
   async read(key: string) {
     return readFile(this.file(key));

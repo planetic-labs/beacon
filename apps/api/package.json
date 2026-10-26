@@ -12,6 +12,7 @@
     "@better-auth/oauth-provider": "1.7.12",
     "@better-auth/passkey": "1.7.12",
     "@fastify/middie": "9.3.6",
+    "@fastify/multipart": "10.1.6",
     "@fastify/static": "10.1.7",
     "better-auth": "1.7.12",
     "drizzle-orm": "0.45.4",

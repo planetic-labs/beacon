@@ -1,4 +1,14 @@
-import { emailSchema } from "@beacon/shared";
+import { draftList, saveDraft, pinChat } from "@api/modules/chat/preferences";
+import { chatAttachments, photoAlbum } from "@api/modules/chat/attachments";
+import { savedChat } from "@api/modules/chat/saved";
+import { setPin, pins } from "@api/modules/chat/pins";
+import { forwardBatch } from "@api/modules/chat/forward";
+import { presenceList, leavePresence } from "@api/modules/presence";
+import { deleteMessage } from "@api/modules/chat/delete";
+import { search } from "@api/modules/search";
+import { receipts, acknowledge, messageReceipts } from "@api/modules/chat/receipts";
+import { validateMentions } from "@api/modules/chat/mentions";
+import { emailSchema, mentionsSchema } from "@beacon/shared";
 import { sql } from "drizzle-orm";
 import { z, ZodError } from "zod";
 import { db } from "@api/db";
@@ -27,7 +37,7 @@ async function handler(
     checkOrigin(request);
     const u = await actor(request.headers);
     const method = request.method;
-    const data = method === "GET" ? {} : await request.json();
+    const data = ["GET", "DELETE"].includes(method) ? {} : await request.json();
     const ok = (value: unknown) =>
       Response.json(value, { headers: { "Cache-Control": "no-store" } });
     if (p[0] === "me") {
@@ -51,6 +61,20 @@ async function handler(
     }
     if (!u.firstName || !u.lastName)
       throw new HttpError(409, "Заполните имя и фамилию");
+    if(p[0]==="presence"&&p[1]==="leave"&&method==="POST"){
+      const input=z.object({connectionId:uuid}).parse(data);await leavePresence(u.id,input.connectionId);return ok({ok:true});
+    }
+    if (p[0] === "presence" && p.length===1 && method==="GET") return ok(await presenceList());
+    if (p[0] === "chats" && p[1]==="saved" && p.length===2 && method==="POST") return ok(await savedChat(u));
+    if (p[0] === "search" && method === "GET") {
+      const params = new URL(request.url).searchParams;
+      const input = z.object({ query: z.string().trim().min(2).max(100), chatId: uuid.optional(), authorId: uuid.optional(), from: z.iso.date().optional(), to: z.iso.date().optional(), beforeId: uuid.optional(), beforeAt: z.iso.datetime({offset:true}).optional() }).parse(Object.fromEntries(params));
+      return ok(await search(u, { ...input, cursor: input.beforeId && input.beforeAt ? {id:input.beforeId,at:input.beforeAt} : undefined }));
+    }
+    if (p[0] === "receipts" && p[1] === "delivered" && method === "POST") {
+      const input = z.object({ items: z.array(z.object({ chatId: uuid, messageId: uuid })).max(200) }).parse(data);
+      await acknowledge(u, input.items); return ok({ok:true});
+    }
     if (p[0] === "users" && method === "GET")
       return ok(
         await rows(
@@ -72,11 +96,40 @@ async function handler(
         return ok(await createChat(u, input));
       }
     }
+    if(p[0]==="drafts" && method==="GET")return ok(await draftList(u));
     if (p[0] === "chats" && p[1]) {
       const chatId = uuid.parse(p[1]);
+      if(p[2]==="draft"&&method==="PATCH"){
+        const input=z.object({text:z.string().max(10000),mentions:mentionsSchema,revision:z.number().int().min(0).max(2147483646)}).parse(data);
+        return ok(await saveDraft(u,chatId,input));
+      }
+      if(p[2]==="pin"&&method==="PATCH")return ok(await pinChat(u,chatId,z.object({pinned:z.boolean()}).parse(data).pinned));
+      if(p[2]==="attachments"&&method==="GET"){
+        const q=new URL(request.url).searchParams;
+        const kind=z.enum(["photo","video","file","links","audio"]).parse(q.get("kind")??"photo");
+        const cursor=q.has("beforeId")?{id:uuid.parse(q.get("beforeId")),at:z.iso.datetime({offset:true}).parse(q.get("beforeAt"))}:undefined;
+        return ok(await chatAttachments(chatId,u,kind,cursor));
+      }
+      if(p[2]==="photos"&&p[3]&&method==="GET")return ok(await photoAlbum(chatId,uuid.parse(p[3]),u));
+      if(p[2]==="pins"&&method==="GET"){
+        const q=new URL(request.url).searchParams;
+        const cursor=q.has("beforeId")?{id:uuid.parse(q.get("beforeId")),at:z.iso.datetime({offset:true}).parse(q.get("beforeAt"))}:undefined;
+        return ok(await pins(chatId,u,cursor));
+      }
+      if(p[2]==="forward"&&method==="POST"){
+        const input=z.object({messages:z.array(z.object({forwardId:uuid,clientMessageId:uuid})).min(1).max(100)}).parse(data);
+        return ok(await forwardBatch(u,chatId,input.messages));
+      }
       if (p[2] === "messages") {
         if (method === "GET") {
           const q = new URL(request.url).searchParams;
+          if (q.has("aroundId")) {
+            await member(chatId,u);
+            const [target] = await rows<{id:string;at:string}>(sql`select id,to_char(created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as at from message where id=${uuid.parse(q.get("aroundId"))} and chat_id=${chatId}`);
+            if (!target) throw new HttpError(404,"Сообщение не найдено");
+            const [before,after] = await Promise.all([history(chatId,u,target),history(chatId,u,target,true,true)]);
+            return ok({messages:[...before.messages,...after.messages],hasMore:before.hasMore,hasNewer:after.hasMore});
+          }
           const after = q.has("afterId");
           const prefix = after ? "after" : "before";
           const cursor = q.has(`${prefix}Id`)
@@ -94,6 +147,7 @@ async function handler(
               cursor,
               after,
               q.get("inclusive") === "true",
+              q.has("throughId") ? uuid.parse(q.get("throughId")) : undefined,
             ),
           );
         }
@@ -102,6 +156,7 @@ async function handler(
             .object({
               clientMessageId: uuid,
               text: z.string().max(10000),
+              mentions: mentionsSchema.optional(),
               replyToId: uuid.optional(),
               forwardId: uuid.optional(),
               stickerId: uuid.optional(),
@@ -110,16 +165,11 @@ async function handler(
           return ok(await send(u, chatId, input));
         }
       }
+      if (p[2] === "receipts" && method === "GET") return ok(await receipts(chatId,u));
       if (p[2] === "read" && method === "POST") {
         const input = z.object({ messageId: uuid }).parse(data);
-        await db.transaction(async (tx) => {
-          await writable(tx, u);
-          await member(chatId, u, tx, true);
-          await tx.execute(
-            sql`update chat_member set last_read_at=greatest(last_read_at,(select created_at from message where id=${input.messageId} and chat_id=${chatId})) where chat_id=${chatId} and user_id=${u.id}`,
-          );
-        });
-        return ok({ ok: true });
+        await acknowledge(u,[{chatId,messageId:input.messageId}],true);
+        return ok({ok:true});
       }
       if (p[2] === "members" && method === "GET") {
         const [c] = await rows(sql`select * from chat where id=${chatId}`);
@@ -136,6 +186,7 @@ async function handler(
         const input = z
           .object({
             title: z.string().trim().min(1).max(120).optional(),
+            description: z.string().trim().max(2000).optional(),
             add: uuid.optional(),
             remove: uuid.optional(),
             ownerId: uuid.optional(),
@@ -165,8 +216,10 @@ async function handler(
               sql`delete from chat_member where chat_id=${chatId} and user_id=${u.id}`,
             );
           } else {
-            if (c.owner_id !== u.id && fresh.role !== "admin")
+            const onlyAdd = !!input.add && !input.title && input.description === undefined && !input.remove && !input.ownerId;
+            if (c.owner_id !== u.id && fresh.role !== "admin" && !(onlyAdd && previous.includes(u.id)))
               throw new HttpError(403, "Недостаточно прав");
+            if (input.description !== undefined) await tx.execute(sql`update chat set description=${input.description} where id=${chatId}`);
             if (input.title)
               await tx.execute(
                 sql`update chat set title=${input.title} where id=${chatId}`,
@@ -211,6 +264,11 @@ async function handler(
         return ok({ ok: true });
       }
     }
+    if(p[0]==="messages"&&p[1]&&p[2]==="receipts"&&method==="GET")return ok(await messageReceipts(u,uuid.parse(p[1])));
+    if(p[0]==="messages"&&p[1]&&p[2]==="pin"&&method==="PATCH"){
+      const input=z.object({pinned:z.boolean()}).parse(data);await setPin(u,uuid.parse(p[1]),input.pinned);return ok({ok:true});
+    }
+    if (p[0] === "messages" && p[1] && p.length===2 && method === "DELETE") return ok(await deleteMessage(u,uuid.parse(p[1])));
     if (p[0] === "messages" && p[1] && method === "PATCH") {
       const id = uuid.parse(p[1]);
       await db.transaction(async (tx) => {
@@ -218,6 +276,7 @@ async function handler(
         const [m] = await rows(sql`select * from message where id=${id}`, tx);
         if (!m) throw new HttpError(404, "Сообщение не найдено");
         await member(m.chat_id, u, tx, true);
+        if (m.deleted_at) throw new HttpError(409, "Сообщение удалено");
         if (p[2] === "reaction") {
           const { emoji } = z.object({ emoji: emojiSchema }).parse(data);
           await tx.execute(
@@ -234,8 +293,11 @@ async function handler(
           const content = m.type === "photo"
             ? messageTypes.photo.validate.parse({ ...data, fileId: m.content.fileId, fileIds: m.content.fileIds })
             : messageTypes.text.validate.parse(data);
+          const offset = String(data.text ?? "").length - String(data.text ?? "").trimStart().length;
+          const mentions = mentionsSchema.parse(data.mentions ?? []).map(m=>({...m,start:m.start-offset}));
+          const validated = { ...content, mentions: await validateMentions(tx,m.chat_id,content.text,mentions) };
           await tx.execute(
-            sql`update message set content=${JSON.stringify(content)}::jsonb,edited_at=now() where id=${id}`,
+            sql`update message set content=${JSON.stringify(validated)}::jsonb,edited_at=now() where id=${id}`,
           );
         }
         await event(tx, m.chat_id);
@@ -410,4 +472,4 @@ async function handler(
     );
   }
 }
-export { handler as GET, handler as POST, handler as PATCH };
+export { handler as GET, handler as POST, handler as PATCH, handler as DELETE };

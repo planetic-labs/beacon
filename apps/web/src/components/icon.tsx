@@ -1,10 +1,15 @@
 import {
   ArrowLeft,
+  Download,
   ArrowRight,
   Bell,
   BellOff,
   Compass,
   FolderOpen,
+  Paperclip,
+  Bookmark,
+  Pin,
+  CheckSquare,
   Heart,
   House,
   ImagePlus,
@@ -25,6 +30,11 @@ import {
 } from "lucide-react";
 
 const icons = {
+  download: Download,
+  bookmark: Bookmark,
+  pin: Pin,
+  select: CheckSquare,
+  file: Paperclip,
   play: Play,
   pause: Pause,
   mic: Mic,

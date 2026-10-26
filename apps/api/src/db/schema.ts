@@ -30,6 +30,7 @@ export const user = pgTable("user", {
   image: text("image"),
   role: text("role").notNull().default("user"),
   banned: boolean("banned").notNull().default(false),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires", { withTimezone: true }),
   createdAt: time("created_at"),
@@ -137,6 +138,7 @@ export const chats = pgTable(
     id: id(),
     kind: text("kind").notNull(),
     title: text("title"),
+    description: text("description").notNull().default(""),
     image: text("image"),
     ownerId: uuid("owner_id")
       .notNull()
@@ -145,7 +147,7 @@ export const chats = pgTable(
     createdAt: time("created_at"),
     updatedAt: time("updated_at"),
   },
-  (t) => [check("chat_kind_check", sql`${t.kind} in ('direct','group')`)],
+  (t) => [check("chat_kind_check", sql`${t.kind} in ('direct','group','saved')`)],
 );
 export const chatMembers = pgTable(
   "chat_member",
@@ -156,8 +158,12 @@ export const chatMembers = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => user.id),
+    pinned: boolean("pinned").notNull().default(false),
+    draft: jsonb("draft").notNull().default(sql`'{"text":"","mentions":[]}'::jsonb`),
+    draftRevision: integer("draft_revision").notNull().default(0),
     joinedAt: time("joined_at"),
     lastReadAt: time("last_read_at"),
+    lastDeliveredAt: timestamp("last_delivered_at", { withTimezone: true, precision: 6 }).notNull().default(sql`'epoch'::timestamptz`),
   },
   (t) => [
     primaryKey({ columns: [t.chatId, t.userId] }),
@@ -188,10 +194,15 @@ export const messages = pgTable(
       .notNull()
       .default(sql`clock_timestamp()`),
     editedAt: timestamp("edited_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (t) => [
     uniqueIndex("message_retry_idx").on(t.authorId, t.clientMessageId),
     index("message_history_idx").on(t.chatId, t.createdAt, t.id),
+    index("message_attachment_idx").on(t.chatId,t.type,t.createdAt,t.id).where(sql`${t.deletedAt} is null and ${t.type} in ('photo','video','circle','file','audio')`),
+    index("message_links_idx").on(t.chatId,t.createdAt,t.id).where(sql`${t.deletedAt} is null and (${t.content}->>'text') ~* 'https?://'`),
+    index("message_search_text_idx").using("gin",sql`to_tsvector('simple',beacon_search_normalize(coalesce(${t.content}->>'text','')))`)
+      .where(sql`${t.type} in ('text','photo')`),
   ],
 );
 export const reactions = pgTable(
@@ -213,6 +224,7 @@ export const files = pgTable("media_file", {
     .notNull()
     .references(() => user.id),
   key: text("storage_key").notNull().unique(),
+  originalName: text("original_name"),
   mime: text("mime").notNull(),
   size: integer("size").notNull(),
   createdAt: time("created_at"),
@@ -416,3 +428,34 @@ export const stickers = pgTable("sticker", {
   keywords: text("keywords").array().notNull().default(sql`'{}'::text[]`),
   createdAt: time("created_at"),
 }, t => [index("sticker_pack_idx").on(t.packId)]);
+
+// A pin belongs to its message; access always follows current chat membership.
+export const pinnedMessages = pgTable("pinned_message", {
+  messageId: uuid("message_id").primaryKey().references(()=>messages.id,{onDelete:"cascade"}),
+  pinnedBy: uuid("pinned_by").notNull().references(()=>user.id),
+  createdAt: timestamp("created_at",{withTimezone:true,precision:6}).notNull().default(sql`clock_timestamp()`),
+});
+// Per-connection leases let multiple devices/instances share presence without Redis.
+export const presenceLeases = pgTable("presence_lease", {
+  id: id(),
+  userId: uuid("user_id").notNull().references(()=>user.id),
+  sessionId: uuid("session_id").notNull().references(()=>session.id,{onDelete:"cascade"}),
+  seenAt: time("seen_at"),
+  expiresAt: time("expires_at"),
+},t=>[index("presence_lease_user_idx").on(t.userId),index("presence_lease_expiry_idx").on(t.expiresAt)]);
+
+// Non-overlapping acknowledgement ranges retain exact server times without a row per message/recipient pair.
+export const receiptCheckpoints = pgTable("receipt_checkpoint", {
+  id: id(),
+  chatId: uuid("chat_id").notNull().references(()=>chats.id),
+  userId: uuid("user_id").notNull().references(()=>user.id),
+  joinedAt: timestamp("joined_at",{withTimezone:true,precision:6}).notNull(),
+  kind: text("kind").notNull(),
+  fromAt: timestamp("from_at",{withTimezone:true,precision:6}).notNull(),
+  throughAt: timestamp("through_at",{withTimezone:true,precision:6}).notNull(),
+  acknowledgedAt: timestamp("acknowledged_at",{withTimezone:true,precision:6}).notNull().default(sql`clock_timestamp()`),
+},t=>[
+  index("receipt_checkpoint_lookup_idx").on(t.chatId,t.userId,t.joinedAt,t.kind,t.throughAt),
+  check("receipt_checkpoint_kind",sql`${t.kind} in ('delivered','read')`),
+  check("receipt_checkpoint_range",sql`${t.fromAt}<${t.throughAt}`),
+]);

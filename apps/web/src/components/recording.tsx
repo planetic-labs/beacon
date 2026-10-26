@@ -4,7 +4,8 @@ import { v7 } from "uuid";
 import { CirclePlayer } from "./message-types";
 import { Dialog } from "./ui";
 
-export function RecordingDialog({ kind, chatId, replyToId, close, notify, sent }: {
+export function RecordingDialog({ kind, chatId, replyToId, close, notify, sent, activity }: {
+  activity?: (kind: RecordingKind | null) => void;
   kind: RecordingKind; chatId: string; replyToId?: string; close: () => void;
   notify: (error: unknown) => void; sent: (chatId: string) => Promise<void>;
 }) {
@@ -29,6 +30,7 @@ export function RecordingDialog({ kind, chatId, replyToId, close, notify, sent }
       release(); upload.current?.abort(); if (sourceUrl.current) URL.revokeObjectURL(sourceUrl.current);
     };
   }, []);
+  useEffect(()=>{ if(phase!=="recording")return;activity?.(kind);return()=>activity?.(null); },[phase,kind,activity]);
   useEffect(() => {
     if (phase !== "recording") return;
     const started = performance.now();

@@ -1,6 +1,9 @@
+import { attachmentSchema, attachmentLimits } from "./attachments";
 import { z } from "zod";
 const recording = z.object({ text: z.string().max(80), fileId: z.uuid(), duration: z.number().positive().max(301) });
 export const messageTypes = {
+  file: { validate: attachmentSchema.extend({ size: z.number().int().positive().max(attachmentLimits.file) }), preview: (v: { name: string }) => `Файл: ${v.name}` },
+  video: { validate: attachmentSchema, preview: (v: { name: string }) => `Видео: ${v.name}` },
   audio: { validate: recording, preview: () => "Голосовое сообщение" },
   circle: { validate: recording.extend({ duration: z.number().positive().max(61) }), preview: () => "Видеокружок" },
   sticker: {

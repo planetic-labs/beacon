@@ -1,0 +1,47 @@
+import assert from "node:assert/strict";
+import { v7 } from "uuid";
+import { sql } from "drizzle-orm";
+import { db } from "../apps/api/src/db";
+import { storage } from "../apps/api/src/modules/media/storage";
+import { cleanupMediaBatch } from "../apps/api/src/modules/media/cleanup";
+type Call=(path:string,method?:string,body?:unknown,cookie?:string)=>Promise<Response>;
+export async function attachmentScenarios(http:(request:Request)=>Promise<Response>,call:Call,cookies:string[],chatId:string,group:string) {
+ const base=process.env.APP_URL!,[admin,one,two]=cookies;
+ const upload=(cookie:string,kind="file",name="Документ.html",bytes:Uint8Array=new TextEncoder().encode("<script>alert('test')</script>"),clientId=v7(),target=chatId)=>{
+  const form=new FormData();form.set("chatId",target);form.set("clientMessageId",clientId);form.set("kind",kind);form.set("text","Подпись вложения");form.set("file",new File([new Uint8Array(bytes)],name,{type:"text/html"}));
+  return http(new Request(`${base}/api/attachments`,{method:"POST",headers:{origin:base,cookie},body:form}));
+ };
+ assert.equal((await upload(admin)).status,403);
+ const clientId=v7(),result=await upload(one,"file","../Документ.html",undefined,clientId);assert.equal(result.status,200,await result.clone().text());
+ const messageId=(await result.json()).id;
+ const history=await(await call(`chats/${chatId}/messages`,"GET",undefined,two)).json();const message=history.messages.find((m:{id:string})=>m.id===messageId);
+ assert.equal(message.type,"file");assert.equal(message.content.name,"Документ.html");const fileId=message.content.fileId;
+ assert.equal((await upload(one,"file","replayed.txt",undefined,clientId)).status,200);
+ assert.equal((await db.execute(sql`select count(*)::int as n from media_file where id=${fileId}`)).rows[0].n,1);
+ const media=(cookie:string,range?:string,download=false)=>http(new Request(`${base}/media/${fileId}${download?"?download=1":""}`,{headers:{cookie,...(range?{range}:{})}}));
+ assert.equal((await media(admin)).status,404);
+ const file=await media(two);assert.equal(file.status,200);assert.equal(file.headers.get("content-type"),"application/octet-stream");assert.match(file.headers.get("content-disposition")!,/^attachment;/);assert.match(file.headers.get("content-disposition")!,/filename\*=UTF-8''/);
+ const partial=await media(two,"bytes=1-4");assert.equal(partial.status,206);assert.equal((await partial.arrayBuffer()).byteLength,4);
+ assert.equal((await call(`messages/${messageId}`,"DELETE",undefined,two)).status,403);
+ assert.equal((await call(`messages/${messageId}`,"DELETE",undefined,admin)).status,403);
+ const forward=await call(`chats/${group}/messages`,"POST",{text:"",clientMessageId:v7(),forwardId:messageId},two);assert.equal(forward.status,200);const forwardId=(await forward.json()).id;
+ assert.equal((await call(`messages/${messageId}`,"DELETE",undefined,one)).status,200);
+ assert.equal((await call(`messages/${messageId}`,"DELETE",undefined,one)).status,200);
+ const deletedHistory=await(await call(`chats/${chatId}/messages`,"GET",undefined,two)).json();const deleted=deletedHistory.messages.find((m:{id:string})=>m.id===messageId);
+ assert.equal(deleted.type,"deleted");assert.deepEqual(deleted.content,{text:"Сообщение удалено"});assert.ok(deleted.deletedAt);
+ assert.equal((await call(`messages/${messageId}`,"PATCH",{text:"resurrection"},one)).status,409);
+ assert.equal((await call(`messages/${messageId}/reaction`,"PATCH",{emoji:"❤️"},two)).status,409);
+ assert.equal((await call(`chats/${group}/messages`,"POST",{text:"",clientMessageId:v7(),forwardId:messageId},one)).status,403);
+ await cleanupMediaBatch();assert.equal((await media(two)).status,200,"forwarded copy retains its file");
+ assert.equal((await call(`messages/${forwardId}`,"DELETE",undefined,two)).status,200);
+ assert.equal((await media(two)).status,404,"authorization disappears immediately, before disk cleanup");
+ await cleanupMediaBatch();await assert.rejects(storage.read(fileId));assert.equal((await db.execute(sql`select id from media_file where id=${fileId}`)).rowCount,0);
+ const replay=await upload(one,"file","replayed.txt",undefined,clientId);assert.equal((await replay.json()).id,messageId);
+ const afterReplay=await(await call(`chats/${chatId}/messages`,"GET",undefined,two)).json();assert.equal(afterReplay.messages.find((m:{id:string})=>m.id===messageId).type,"deleted");
+ const videoBytes=new Uint8Array(64);videoBytes.set(new TextEncoder().encode("ftyp"),4);
+ const video=await upload(one,"video","Видео.mp4",videoBytes);assert.equal(video.status,200,await video.clone().text());const videoId=(await video.json()).id;
+ const videoHistory=await(await call(`chats/${chatId}/messages`,"GET",undefined,two)).json();const videoMessage=videoHistory.messages.find((m:{id:string})=>m.id===videoId);assert.equal(videoMessage.type,"video");assert.equal(videoMessage.content.mime,"video/mp4");
+ const videoMedia=await http(new Request(`${base}/media/${videoMessage.content.fileId}`,{headers:{cookie:two}}));assert.match(videoMedia.headers.get("content-disposition")!,/^inline;/);await videoMedia.arrayBuffer();
+ const download=await http(new Request(`${base}/media/${videoMessage.content.fileId}?download=1`,{headers:{cookie:two}}));assert.match(download.headers.get("content-disposition")!,/^attachment;/);await download.arrayBuffer();
+ assert.equal((await upload(one,"file","empty.zip",new Uint8Array())).status,400);
+}

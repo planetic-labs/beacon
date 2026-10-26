@@ -1,9 +1,11 @@
+import { Readable } from "node:stream";
+import { attachmentRoutes } from "./controllers/attachment";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import staticFiles from "@fastify/static";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { fromNodeHeaders } from "better-auth/node";
-import { GET as v1, POST as v1Post, PATCH as v1Patch } from "./controllers/v1";
+import { GET as v1, POST as v1Post, PATCH as v1Patch, DELETE as v1Delete } from "./controllers/v1";
 import { GET as authGet, POST as authPost } from "./controllers/auth";
 import { GET as pushGet, POST as pushPost, PATCH as pushPatch, DELETE as pushDelete } from "./controllers/push";
 import { handler as stickers } from "./controllers/stickers";
@@ -52,13 +54,13 @@ export async function createApp(options: { dev?: boolean; serveWeb?: boolean } =
       response.headers.forEach((value, key) => { if (key !== "set-cookie") reply.header(key, value); });
       const cookies = response.headers.getSetCookie();
       if (cookies.length) reply.header("set-cookie", cookies);
-      return reply.send(response.body ? Buffer.from(await response.arrayBuffer()) : null);
+      return reply.send(response.body ? Readable.fromWeb(response.body as import("node:stream/web").ReadableStream<Uint8Array>) : null);
     };
   }
   app.get("/api/health", bridge(() => health()));
   for (const [method, handler] of [["GET", authGet], ["POST", authPost]] as const)
     app.route({ method, url: "/api/auth/*", handler: bridge(handler) });
-  for (const [method, handler] of [["GET", v1], ["POST", v1Post], ["PATCH", v1Patch]] as const)
+  for (const [method, handler] of [["GET", v1], ["POST", v1Post], ["PATCH", v1Patch], ["DELETE", v1Delete]] as const)
     app.route({ method, url: "/api/v1/*", handler: bridge(request => handler(request,
       new URL(request.url).pathname.slice("/api/v1/".length).split("/").map(decodeURIComponent),
     )) });
@@ -69,6 +71,7 @@ export async function createApp(options: { dev?: boolean; serveWeb?: boolean } =
     app.route({ method, url: "/api/push", handler: run });
     app.route({ method, url: "/api/push/*", handler: run });
   }
+  await app.register(attachmentRoutes);
   app.post("/api/avatar", bridge(avatar));
   for (const method of ["GET", "POST", "PATCH"] as const) {
     app.route({ method, url: "/api/stickers", bodyLimit: 101 * 1024 * 1024, handler: bridge(stickers) });

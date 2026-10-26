@@ -1,4 +1,14 @@
-import { normalizeEmail, stickerSuggestionQuery, type Sticker, type RecordingKind } from "@beacon/shared";
+import { useDraftSync } from "./drafts";
+import { PhotoViewer, type PhotoTarget } from "./photo-viewer";
+import { ChatAttachments } from "./chat-attachments";
+import { ReadDetails } from "./read-details";
+import { usePresence, presenceText } from "./presence";
+import { PinnedMessages } from "./pins";
+import { AttachmentUpload } from "./attachment-upload";
+import { attachmentLimits, type AttachmentKind } from "@beacon/shared";
+import { SearchPanel } from "./search";
+import { useChatFeatures, DeliveryStatus, MentionSuggestions } from "./chat-features";
+import { moveMentions, type Mention, type SearchHit, normalizeEmail, stickerSuggestionQuery, type Sticker, type RecordingKind } from "@beacon/shared";
 import {
   useState,
   useEffect,
@@ -22,6 +32,22 @@ import { api, ApiError, Avatar, Field, AvatarPicker, Dialog } from "./ui";
 import { Profile, Security, NewChat, UserForm, MembershipForm } from "./forms";
 import { PushSettings, ChatPushToggle, forgetPushDevice, pushWorker, syncPushDevice } from "./push-settings";
 export function Beacon(): ReactNode {
+  const [photoView,setPhotoView]=useState<PhotoTarget|null>(null),[attachmentsOpen,setAttachmentsOpen]=useState(false),[readDetails,setReadDetails]=useState<Message|null>(null);
+  const [selectionMode,setSelectionMode]=useState(false),[selectedMessages,setSelectedMessages]=useState<string[]>([]);
+  const [forwardSources,setForwardSources]=useState<Message[]>([]),[pinsRevision,setPinsRevision]=useState(0);
+  const [attachment,setAttachment]=useState<{file:File;kind:AttachmentKind;chatId:string}|null>(null);
+  const [deleting,setDeleting]=useState<Message|null>(null),[deleteBusy,setDeleteBusy]=useState(false);
+  const attachmentInput=useRef<HTMLInputElement>(null);
+  const [searchRevision,setSearchRevision]=useState(0);
+  const [searchOpen,setSearchOpen] = useState(false);
+  const [searchScope,setSearchScope] = useState<{id:string;name:string}|undefined>(undefined);
+  const [mentionCursor,setMentionCursor] = useState(0);
+  const mentions = useRef<Mention[]>([]), draftValue = useRef("");
+  const mentionDrafts = useRef<Record<string,Mention[]>>({});
+  const [chatMembers,setChatMembers] = useState<User[]>([]);
+  const [historical,setHistorical] = useState(false);
+  const historyVersion = useRef(0), aroundBusy = useRef(false);
+  const historicalRef = useRef(false), jumpRequest = useRef<{chatId:string;messageId:string}|null>(null);
   const [recordingKind, setRecordingKind] = useState<RecordingKind | null>(null);
   const [stickersOpen, setStickersOpen] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
@@ -60,12 +86,22 @@ export function Beacon(): ReactNode {
     [historyBusy, setHistoryBusy] = useState(false);
   const [online, setOnline] = useState(true),
     [networkAvailable, setNetworkAvailable] = useState(true),
-    [draft, setDraft] = useState(""),
+    [draft, setDraftValue] = useState(""),
     [context, setContext] = useState<{
       kind: "reply" | "edit";
       message: Message;
     } | null>(null),
     [pending, setPending] = useState<Pending[]>([]);
+  function setDraft(value: string | ((before:string)=>string), sync = true) {
+    const next = typeof value === "function" ? value(draftValue.current) : value;
+    mentions.current = moveMentions(draftValue.current,next,mentions.current);
+    draftValue.current=next;setDraftValue(next);
+    if(sync && selectedRef.current && context?.kind!=="edit"){
+      const id=selectedRef.current;
+      drafts.current[id]=next;
+      queueMicrotask(()=>{mentionDrafts.current[id]=mentions.current.slice();draftSync.current.change(id,{text:next,mentions:mentionDrafts.current[id]});});
+    }
+  }
   const [modal, setModal] = useState<
       | "new"
       | "group"
@@ -95,9 +131,12 @@ export function Beacon(): ReactNode {
   selectedRef.current = selected;
   meRef.current = me;
   messagesRef.current = messages;
+  const editingRef=useRef(false);editingRef.current=context?.kind==="edit";
   const notify = (e: unknown) =>
     setError(e instanceof Error ? e.message : String(e));
   useEffect(() => {
+    drafts.current={};mentionDrafts.current={};mentions.current=[];
+    draftValue.current="";setDraftValue("");
     if (!me?.id) return;
     const key = `update-drafts:${me.id}`;
     try {
@@ -151,7 +190,10 @@ export function Beacon(): ReactNode {
   const refreshHistory = useCallback(async (id: string, older = false) => {
     if (older) setHistoryBusy(true);
     try {
+      const version=historyVersion.current;
+      if (aroundBusy.current || jumpRequest.current?.chatId===id) return;
       const first = messagesRef.current[0];
+      const through = historicalRef.current && !older ? messagesRef.current.at(-1) : undefined;
       const forward = !!first && !older;
       let cursor = first,
         more = true,
@@ -163,12 +205,12 @@ export function Beacon(): ReactNode {
       const collected: Message[] = [];
       do {
         const query = cursor
-          ? `?${forward ? "after" : "before"}Id=${cursor.id}&${forward ? "after" : "before"}At=${encodeURIComponent(cursor.createdAt)}${forward && inclusive ? "&inclusive=true" : ""}`
+          ? `?${forward ? "after" : "before"}Id=${cursor.id}&${forward ? "after" : "before"}At=${encodeURIComponent(cursor.createdAt)}${forward && inclusive ? "&inclusive=true" : ""}${through ? `&throughId=${through.id}` : ""}`
           : "";
         result = await api<{ messages: Message[]; hasMore: boolean }>(
           `chats/${id}/messages${query}`,
         );
-        if (selectedRef.current !== id) return;
+        if (selectedRef.current !== id || historyVersion.current!==version) return;
         collected.push(...result.messages);
         more = forward && result.hasMore;
         cursor = result.messages.at(-1)!;
@@ -194,15 +236,7 @@ export function Beacon(): ReactNode {
             a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
         );
       });
-      if (result.messages.length && !older && !document.hidden) {
-        await api(`chats/${id}/read`, "POST", {
-          messageId: result.messages.at(-1)!.id,
-        });
-        setChats((cs) =>
-          cs.map((c) => (c.id === id ? { ...c, unread: 0 } : c)),
-        );
-      }
-      if (!older && nearBottom)
+      if (!older && nearBottom && !historicalRef.current)
         setTimeout(
           () => feed.current?.scrollTo({ top: feed.current.scrollHeight }),
           50,
@@ -212,12 +246,14 @@ export function Beacon(): ReactNode {
     }
   }, []);
   const openChat = (id: string) => {
-    if (selectedRef.current) drafts.current[selectedRef.current] = draft;
+    if (selectedRef.current && context?.kind!=="edit") { drafts.current[selectedRef.current] = draft; mentionDrafts.current[selectedRef.current]=mentions.current; }
+    historyVersion.current++;aroundBusy.current=false;historicalRef.current=false;setHistorical(false);
     setSelected(id);
     selectedRef.current = id;
     setMessages([]);
     messagesRef.current = [];
-    setDraft(drafts.current[id] ?? "");
+    setDraft(drafts.current[id] ?? "",false);
+    mentions.current=mentionDrafts.current[id]??[];
     setContext(null);
     setModal(null);
     setHasMore(false);
@@ -316,6 +352,7 @@ export function Beacon(): ReactNode {
       if (userId === meRef.current?.id) void refreshMe();
     });
     s.on("chat.changed", ({ chatId }: { chatId: string }) => {
+      setSearchRevision(value=>value+1);
       void refreshLists().catch(notify);
       if (selectedRef.current === chatId)
         void refreshHistory(chatId).catch((e) => {
@@ -338,6 +375,31 @@ export function Beacon(): ReactNode {
     // Callbacks read selected chat through refs; connection lives for the authenticated user.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.id, me?.firstName, me?.lastName]);
+  useEffect(()=>{
+    if(context&&messages.some(m=>m.id===context.message.id&&m.type==="deleted")){
+      if(context.kind==="edit"){setDraft(drafts.current[context.message.chatId]??"",false);mentions.current=mentionDrafts.current[context.message.chatId]??[];}
+      setContext(null);
+    }
+    if(target&&messages.some(m=>m.id===target.id&&m.type==="deleted")){setTarget(null);setModal(null);}
+  },[messages,context,target]);
+  useEffect(()=>{setPhotoView(null);setAttachmentsOpen(false);setReadDetails(null);},[me?.id]);
+  const draftSync=useDraftSync(me?.id,socket,`${me?.firstName}/${me?.lastName}`,(id,value)=>{
+    drafts.current[id]=value.text;mentionDrafts.current[id]=value.mentions;
+    if(selectedRef.current===id&&!editingRef.current){draftValue.current=value.text;setDraftValue(value.text);mentions.current=value.mentions;}
+  });
+  const presence=usePresence(me?.id,socket,`${me?.firstName}/${me?.lastName}`);
+  useEffect(()=>{setSelectedMessages(ids=>ids.filter(id=>!messages.some(m=>m.id===id&&m.type==="deleted")));},[messages]);
+  const {receipts,activity,recording,activityText} = useChatFeatures(me?.id,selected,messages,chats,feed,socket,refreshLists,`${me?.firstName}/${me?.lastName}`);
+  useEffect(()=>{
+    let live=true;setChatMembers([]);
+    if(selected&&me)void api<{members:User[]}>(`chats/${selected}/members`).then(value=>{if(live&&Array.isArray(value.members))setChatMembers(value.members);}).catch(()=>{});
+    return()=>{live=false;};
+  },[selected,me?.id,chats]);
+  useEffect(()=>{
+    const request=jumpRequest.current;
+    if(!request||selected!==request.chatId)return;
+    void loadAround(request.chatId,request.messageId).catch(notify).finally(()=>{if(jumpRequest.current===request)jumpRequest.current=null;});
+  },[selected]);
   useEffect(() => {
     if (selected) void refreshHistory(selected).catch(notify);
   }, [selected]);
@@ -372,7 +434,8 @@ export function Beacon(): ReactNode {
     if (sending.current.has(item.clientMessageId)) return;
     sending.current.add(item.clientMessageId);
     try {
-      await api(`chats/${item.chatId}/messages`, "POST", item);
+      if(item.forwards)await api(`chats/${item.chatId}/forward`,"POST",{messages:item.forwards});
+      else await api(`chats/${item.chatId}/messages`, "POST", item);
       setPending((ps) =>
         ps.filter((p) => p.clientMessageId !== item.clientMessageId),
       );
@@ -432,22 +495,24 @@ export function Beacon(): ReactNode {
       setBusy(false);
     }
   }
-  useEffect(() => { setPhotos([]); setRecordingKind(null); }, [selected]);
+  useEffect(() => { setPhotos([]); setRecordingKind(null); setAttachment(null);setDeleting(null);setSelectionMode(false);setSelectedMessages([]);setForwardSources([]);setPhotoView(null);setAttachmentsOpen(false);setReadDetails(null); }, [selected]);
   async function submitMessage(e: FormEvent) {
     e.preventDefault();
     if (!selected || (!draft.trim() && !photos.length) || busy) return;
+    activity(null);
     if (photos.length && context?.kind !== "edit") {
       const chatId = selected;
       setBusy(true);
       try {
         const form = new FormData();
         photos.forEach(photo => form.append("file", photo)); form.set("chatId", chatId);
-        form.set("clientMessageId", photoMessageId.current); form.set("text", draft);
+        form.set("clientMessageId", photoMessageId.current); form.set("text", draft); form.set("mentions",JSON.stringify(mentions.current));
         if (context?.message.id) form.set("replyToId", context.message.id);
         const response = await fetch("/api/photos", { method: "POST", body: form, signal: AbortSignal.timeout(120000) });
         if (response.status === 401) window.dispatchEvent(new Event("beacon:unauthorized"));
         if (!response.ok) throw new Error((await response.json()).error || "Не удалось отправить фото");
         drafts.current[chatId] = "";
+        mentionDrafts.current[chatId]=[];draftSync.current.change(chatId,{text:"",mentions:[]});
         if (selectedRef.current === chatId) { setPhotos([]); setDraft(""); setContext(null); }
         await refreshHistory(chatId); await refreshLists();
       } catch (e) { notify(e); } finally { setBusy(false); }
@@ -456,9 +521,10 @@ export function Beacon(): ReactNode {
     if (context?.kind === "edit") {
       setBusy(true);
       try {
-        await api(`messages/${context.message.id}`, "PATCH", { text: draft });
+        await api(`messages/${context.message.id}`, "PATCH", { text: draft, mentions: mentions.current });
         setContext(null);
-        setDraft(drafts.current[selected] ?? "");
+        setDraft(drafts.current[selected] ?? "",false);
+        mentions.current=mentionDrafts.current[selected]??[];
         await refreshHistory(selected);
       } catch (e) {
         notify(e);
@@ -471,6 +537,7 @@ export function Beacon(): ReactNode {
       chatId: selected,
       clientMessageId: v7(),
       text: draft,
+      mentions: [...mentions.current],
       replyToId: context?.message.id,
     };
     setPending((ps) => [...ps, p]);
@@ -525,41 +592,48 @@ export function Beacon(): ReactNode {
       notify(e);
     }
   }
+  function highlightMessage(id:string) {
+    setTimeout(()=>{const node=document.getElementById(`message-${id}`);node?.scrollIntoView({block:"center"});node?.classList.add("highlight");setTimeout(()=>node?.classList.remove("highlight"),1800);},80);
+  }
+  async function loadAround(chatId:string,messageId:string) {
+    setSelectionMode(false);setSelectedMessages([]);
+    const version=++historyVersion.current;aroundBusy.current=true;
+    try {
+      const result=await api<{messages:Message[];hasMore:boolean}>(`chats/${chatId}/messages?aroundId=${messageId}`);
+      if(selectedRef.current!==chatId || historyVersion.current!==version)return;
+      historicalRef.current=true;setHistorical(true);messagesRef.current=result.messages;setMessages(result.messages);setHasMore(result.hasMore);highlightMessage(messageId);
+    } finally { if(historyVersion.current===version)aroundBusy.current=false; }
+  }
+  async function removeMessage() {
+    if(!deleting||deleteBusy)return;
+    setDeleteBusy(true);
+    try {
+      await api(`messages/${deleting.id}`,"DELETE");
+      if(context?.message.id===deleting.id){setContext(null);setDraft(drafts.current[deleting.chatId]??"");}
+      if(target?.id===deleting.id){setModal(null);setTarget(null);}
+      setDeleting(null);setSearchRevision(value=>value+1);await refreshLists();
+      if(selectedRef.current===deleting.chatId)await refreshHistory(deleting.chatId);
+    }catch(error){notify(error);}finally{setDeleteBusy(false);}
+  }
   async function jump(message: Message) {
-    if (!message.replyToId) return;
-    const found = document.getElementById(`message-${message.replyToId}`);
-    if (found) {
-      found.scrollIntoView({ block: "center", behavior: "smooth" });
-      found.classList.add("highlight");
-      setTimeout(() => found.classList.remove("highlight"), 1500);
-    } else {
-      try {
-        let oldest = messagesRef.current[0];
-        for (let n = 0; n < 100 && oldest; n++) {
-          const result = await api<{ messages: Message[]; hasMore: boolean }>(
-            `chats/${selected}/messages?beforeId=${oldest.id}&beforeAt=${encodeURIComponent(oldest.createdAt)}`,
-          );
-          setMessages((ms) => [...result.messages, ...ms]);
-          if (result.messages.some((m) => m.id === message.replyToId)) {
-            setTimeout(
-              () =>
-                document
-                  .getElementById(`message-${message.replyToId}`)
-                  ?.scrollIntoView({ block: "center" }),
-              50,
-            );
-            return;
-          }
-          if (!result.hasMore) break;
-          oldest = result.messages[0];
-        }
-        notify(
-          "Сообщение находится глубже в истории. Загрузите предыдущие сообщения.",
-        );
-      } catch (e) {
-        notify(e);
-      }
-    }
+    if(!message.replyToId||!selected)return;
+    if(document.getElementById(`message-${message.replyToId}`))highlightMessage(message.replyToId);
+    else try{await loadAround(selected,message.replyToId);}catch(e){notify(e);}
+  }
+  async function openSearchMessage(hit:SearchHit) {
+    if(selectedRef.current===hit.chatId){try{await loadAround(hit.chatId,hit.id);}catch(e){notify(e);}return;}
+    jumpRequest.current={chatId:hit.chatId,messageId:hit.id};openChat(hit.chatId);
+  }
+  function chooseMention(user:User,start:number,end:number) {
+    const label=`@${user.name}`, next=draft.slice(0,start)+label+" "+draft.slice(end);
+    if(next.length>10000)return;
+    setDraft(next);mentions.current=[...mentions.current,{userId:user.id,start,length:label.length}];
+    const position=start+label.length+1;setMentionCursor(position);
+    requestAnimationFrame(()=>{textarea.current?.focus();textarea.current?.setSelectionRange(position,position);});
+  }
+  function beginSearch(scope?:{id:string;name:string}) {
+    setSearchScope(scope);setSearchOpen(true);if(section!=="chats")setSection("chats");
+    if(device==="mobile")closeChat();
   }
   if (loading)
     return (
@@ -705,11 +779,23 @@ export function Beacon(): ReactNode {
       </div>
     );
   const current = chats.find((c) => c.id === selected);
-  const listedChats = chats.filter(c => c.kind === "group" || c.lastAt);
-  const emptyDirectChats = new Map(chats.filter(c => c.kind === "direct" && !c.lastAt).map(c => [c.peerId, c]));
+  const saved=chats.find(c=>c.kind==="saved");
+  const listedChats = chats.filter(c => c.kind!=="saved"&&(c.pinned || c.kind === "group" || c.lastAt));
+  const emptyDirectChats = new Map(chats.filter(c => c.kind === "direct" && !c.lastAt && !c.pinned).map(c => [c.peerId, c]));
   const directUserIds = new Set(listedChats.filter(c => c.kind === "direct").map(c => c.peerId));
   const availableUsers = users.filter(u => u.id !== me.id && !directUserIds.has(u.id));
+  const ensureSaved=async()=>saved??await api<{id:string}>("chats/saved","POST",{});
+  const openSaved=async()=>{if(busy)return;setBusy(true);try{const chat=await ensureSaved();await refreshLists();openChat(chat.id);}catch(error){notify(error);}finally{setBusy(false);}};
+  const queueForwards=(chatId:string)=>{
+    if(!forwardSources.length)return;
+    const sources=[...forwardSources].sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id));
+    setPending(items=>[...items,{chatId,clientMessageId:v7(),text:`Пересылка: ${sources.length} сообщ.`,forwards:sources.map(m=>({forwardId:m.id,clientMessageId:v7()}))}]);
+    setModal(null);setForwardSources([]);setSelectedMessages([]);setSelectionMode(false);
+  };
+  function toggleSelected(id:string){setSelectedMessages(ids=>ids.includes(id)?ids.filter(value=>value!==id):ids.length<100?[...ids,id]:ids);}
+  async function togglePin(message:Message){try{await api(`messages/${message.id}/pin`,"PATCH",{pinned:!message.pinned});setPinsRevision(value=>value+1);if(selected)await refreshHistory(selected);}catch(error){notify(error);}}
   const startDirectChat = async (userId: string) => {
+    if(userId===me.id){await openSaved();return;}
     if (busy) return;
     setBusy(true);
     try {
@@ -733,7 +819,7 @@ export function Beacon(): ReactNode {
       </button>
       <button
         className={`rail-action ${section === "chats" ? "active" : ""}`}
-        onClick={() => setSection("chats")}
+        onClick={() => {setSearchOpen(false);setSection("chats");}}
         aria-label="Чаты"
       >
         <Icon name="chats" />
@@ -749,8 +835,8 @@ export function Beacon(): ReactNode {
           key={icon}
           className="rail-action"
           aria-label={label}
-          aria-haspopup="dialog"
-          onClick={() => setUpcomingService(label)}
+          aria-haspopup={icon === "search" ? undefined : "dialog"}
+          onClick={() => icon === "search" ? beginSearch() : setUpcomingService(label)}
         >
           <Icon name={icon} />
           <span className="rail-tooltip" aria-hidden="true">{label}</span>
@@ -779,14 +865,15 @@ export function Beacon(): ReactNode {
   );
   function chooseContext(kind: "reply" | "edit", m: Message) {
     if (kind === "edit") {
-      if (selected) drafts.current[selected] = draft;
-      setDraft(m.content.text);
+      if (selected) {drafts.current[selected] = draft;mentionDrafts.current[selected]=mentions.current;}
+      setDraft(m.content.text,false);
+      mentions.current=[...(m.content.mentions??[])];
     }
     setContext({ kind, message: m });
     textarea.current?.focus();
   }
   function cancelContext() {
-    if (context?.kind === "edit") setDraft(drafts.current[selected!] ?? "");
+    if (context?.kind === "edit") {setDraft(drafts.current[selected!] ?? "",false);mentions.current=mentionDrafts.current[selected!]??[];}
     setContext(null);
   }
   return (
@@ -795,7 +882,7 @@ export function Beacon(): ReactNode {
       {section === "chats" ? (
         <div className={`chat-shell ${selected ? "has-chat" : ""}`}>
           {nav}
-          <section className="chat-list">
+          {searchOpen ? <SearchPanel key={searchScope?.id??"global"} revision={searchRevision} scope={searchScope} users={users} chats={chats} openChat={openChat} openPerson={id=>void startDirectChat(id)} openMessage={hit=>void openSearchMessage(hit)} close={()=>setSearchOpen(false)}/> : <section className="chat-list">
             <header className="list-header">
               <div className="list-presence">
                 <div>
@@ -815,6 +902,7 @@ export function Beacon(): ReactNode {
               <div className="list-heading">
                 <h1>Чаты</h1>
                 <div className="inline-actions">
+                  <button className="icon-button" aria-label="Открыть поиск" onClick={()=>beginSearch()}><Icon name="search"/></button>
                   <button
                     className="icon-button"
                     onClick={() => setModal("new")}
@@ -833,19 +921,22 @@ export function Beacon(): ReactNode {
               </div>
             </header>
             <div className="chat-rows">
+              <button className={`chat-row ${selected===saved?.id?"active":""}`} onClick={()=>void openSaved()} disabled={busy} aria-label="Избранное">
+                <span className="avatar saved-avatar"><Icon name="bookmark"/></span><div className="chat-row-main"><div className="chat-row-title">Избранное</div><div className="chat-row-preview">{saved?.preview??"Заметки и сохранённые сообщения"}</div></div>
+              </button>
               {listedChats.map((c) => (
                 <button
                   className={`chat-row ${selected === c.id ? "active" : ""}`}
                   key={c.id}
                   onClick={() => openChat(c.id)}
                 >
-                  <Avatar
+                  <span className="presence-avatar"><Avatar
                     name={c.name ?? "Чат"}
                     image={c.avatar}
                     extra={c.kind === "group" ? "warm" : ""}
-                  />
+                  />{c.kind==="direct"&&presence.people.get(c.peerId??"")?.online&&<span className="online-dot" aria-label="В сети"/>}</span>
                   <div className="chat-row-main">
-                    <div className="chat-row-title">{c.name}</div>
+                    <div className="chat-row-title">{c.pinned&&<Icon name="pin"/>}{c.name}</div>
                     <div className="chat-row-preview">
                       {c.preview ?? "Сообщений пока нет"}
                     </div>
@@ -859,6 +950,7 @@ export function Beacon(): ReactNode {
                           })
                         : ""}
                     </span>
+                    {!!c.unreadMentions && <span className="unread mention-badge" title="Вас упомянули" aria-label="Вас упомянули">@</span>}
                     {c.unread > 0 && <span className="unread">{c.unread}</span>}
                   </div>
                 </button>
@@ -874,11 +966,11 @@ export function Beacon(): ReactNode {
                     else void startDirectChat(u.id);
                   }}
                 >
-                  <Avatar name={u.name} image={u.image} />
+                  <span className="presence-avatar"><Avatar name={u.name} image={u.image} />{!u.banned&&presence.people.get(u.id)?.online&&<span className="online-dot" aria-label="В сети"/>}</span>
                   <div className="chat-row-main">
                     <div className="chat-row-title">{u.name}</div>
                     <div className="chat-row-preview">
-                      {u.banned ? "Доступ приостановлен" : "Сообщений пока нет"}
+                      {u.banned ? "Доступ приостановлен" : presenceText(presence.people.get(u.id),presence.now)}
                     </div>
                   </div>
                 </button>
@@ -898,7 +990,7 @@ export function Beacon(): ReactNode {
                 </div>
               )}
             </div>
-          </section>
+          </section>}
           <section className="workspace">
             {selected && current ? (
               <>
@@ -908,25 +1000,27 @@ export function Beacon(): ReactNode {
                     aria-label="Назад к списку"
                     onClick={() => {
                       drafts.current[selected] = draft;
+                      mentionDrafts.current[selected]=mentions.current;
                       closeChat();
                     }}
                   >
                     <Icon name="back" />
                   </button>
-                  <Avatar
+                  {current.kind==="saved"?<span className="avatar saved-avatar"><Icon name="bookmark"/></span>:<Avatar
                     name={current.name ?? "Чат"}
                     image={current.avatar}
                     extra="warm"
-                  />
+                  />}
                   <div className="chat-header-copy">
-                    <div className="chat-header-title">{current.name}</div>
+                    <button type="button" className="chat-header-title chat-attachments-title" aria-label="Вложения чата" title="Вложения чата" onClick={()=>setAttachmentsOpen(true)}><span>{current.name}</span><Icon name="file"/></button>
                     <div className="chat-header-subtitle">
-                      {current.kind === "group"
-                        ? "Групповой чат"
-                        : "Личная переписка"}
+                      {current.kind==="saved"?"Личные заметки":activityText || (current.kind === "group" ? "Групповой чат" : presenceText(presence.people.get(current.peerId??""),presence.now))}
                     </div>
                   </div>
-                  <ChatPushToggle chatId={selected} notify={notify}/>
+                  <button className="icon-button" aria-label={current.pinned?"Открепить чат":"Закрепить чат"} title={current.pinned?"Открепить чат":"Закрепить чат"} aria-pressed={!!current.pinned} onClick={()=>void api(`chats/${selected}/pin`,"PATCH",{pinned:!current.pinned}).then(()=>refreshLists()).catch(notify)}><Icon name="pin"/></button>
+                  <button className="icon-button" aria-label="Поиск в чате" onClick={()=>beginSearch({id:selected,name:current.name})}><Icon name="search"/></button>
+                  <button className="icon-button" aria-label="Выбрать сообщения" aria-pressed={selectionMode} onClick={()=>{setSelectionMode(value=>!value);setSelectedMessages([]);}}><Icon name="select"/></button>
+                  {current.kind!=="saved"&&<ChatPushToggle chatId={selected} notify={notify}/>}
                   {current.kind === "group" && (
                     <button
                       className="icon-button"
@@ -937,11 +1031,14 @@ export function Beacon(): ReactNode {
                     </button>
                   )}
                 </header>
+                <PinnedMessages key={selected} chatId={selected} socket={socket} connectionKey={`${me.firstName}/${me.lastName}`} changed={pinsRevision} onChanged={(id,pinned)=>setMessages(items=>items.map(m=>m.id===id?{...m,pinned}:m))} jump={id=>void loadAround(selected,id).catch(notify)} notify={notify}/>
+                {selectionMode&&<div className="selection-toolbar"><span>Выбрано: {selectedMessages.length} / 100</span><button className="text-button" disabled={!selectedMessages.length} onClick={()=>{setForwardSources(messages.filter(m=>selectedMessages.includes(m.id)&&m.type!=="deleted"));setTarget(null);setModal("forward");}}>Переслать</button><button className="text-button" onClick={()=>{setSelectionMode(false);setSelectedMessages([]);}}>Отмена</button></div>}
                 {!online && (
                   <div className="connection-strip">
                     Нет связи · отправка повторится после подключения
                   </div>
                 )}
+                {historical && <button className="history-return text-button" onClick={()=>{historyVersion.current++;historicalRef.current=false;setHistorical(false);messagesRef.current=[];setMessages([]);void refreshHistory(selected).catch(notify);}}>К новым сообщениям</button>}
                 <div className="feed" ref={feed}>
                   <div className="feed-inner">
                     {hasMore && (
@@ -971,8 +1068,10 @@ export function Beacon(): ReactNode {
                           )}
                         </>
                         <div
-                          className={`message-group ${m.authorId === me.id ? "outgoing" : ""}`}
+                          data-message-id={m.id}
+                          className={`message-group ${m.authorId === me.id ? "outgoing" : ""} ${selectedMessages.includes(m.id)?"selected-message":""} ${selectionMode?"selectable-message":""}`}
                         >
+                          {selectionMode&&m.type!=="deleted"&&<input type="checkbox" className="message-selection" aria-label={`Выбрать сообщение ${m.authorName}: ${(m.content.text||m.content.name||"Вложение").slice(0,60)}`} checked={selectedMessages.includes(m.id)} disabled={!selectedMessages.includes(m.id)&&selectedMessages.length>=100} onChange={()=>toggleSelected(m.id)}/>}
                           {m.authorId !== me.id && (
                             <div className="message-avatar">
                               <Avatar
@@ -1002,9 +1101,10 @@ export function Beacon(): ReactNode {
                                   </button>
                                 )}
                                 <span className="bubble-text">
-                                  {renderMessage(m.type, m.content)}
+                                  {renderMessage(m.type, m.content, me.id, id=>{if(id!==me.id)void startDirectChat(id);}, index=>setPhotoView({chatId:m.chatId,messageId:m.id,index}))}
                                 </span>
                                 <span className="message-meta">
+                                  {current.kind!=="saved"&&m.type!=="deleted"&&m.authorId===me.id&&<DeliveryStatus receipts={receipts} message={m} open={()=>setReadDetails(m)}/>}
                                   {m.editedAt && (
                                     <span
                                       title={new Date(
@@ -1021,7 +1121,7 @@ export function Beacon(): ReactNode {
                                 </span>
                               </div>
                             </div>
-                            <div className="message-tools">
+                            {m.type!=="deleted"&&!selectionMode&&<div className="message-tools">
                               {[
                                 ...new Set(m.reactions.map((r) => r.emoji)),
                               ].map((emoji) => (
@@ -1058,12 +1158,16 @@ export function Beacon(): ReactNode {
                               </button>
                               <button
                                 onClick={() => {
-                                  setTarget(m);
+                                  setForwardSources([m]);setTarget(null);
                                   setModal("forward");
                                 }}
                               >
                                 Переслать
                               </button>
+                              {m.authorId===me.id&&current.kind!=="saved"&&<button type="button" onClick={()=>setReadDetails(m)}>Кто прочитал</button>}
+                              <button type="button" aria-label={m.pinned?"Открепить сообщение":"Закрепить сообщение"} onClick={()=>void togglePin(m)}>{m.pinned?"Открепить":"Закрепить"}</button>
+                              <button type="button" aria-label="Выбрать это сообщение" onClick={()=>{setSelectionMode(true);toggleSelected(m.id);}}>Выбрать</button>
+                              {m.authorId===me.id&&<button type="button" className="delete-message-button" onClick={()=>setDeleting(m)}>Удалить</button>}
                               {m.authorId === me.id && ["text", "photo"].includes(m.type) && (
                                 <button
                                   onClick={() => chooseContext("edit", m)}
@@ -1071,7 +1175,7 @@ export function Beacon(): ReactNode {
                                   Изменить
                                 </button>
                               )}
-                            </div>
+                            </div>}
                           </div>
                         </div>
                       </div>
@@ -1129,6 +1233,7 @@ export function Beacon(): ReactNode {
                   className="composer-dock"
                   data-composer-state={context?.kind ?? "input"}
                 >
+                  <MentionSuggestions draft={draft} cursor={mentionCursor} members={chatMembers} choose={chooseMention}/>
                   {context?.kind !== "edit" && !busy && !photos.length && <StickerSuggestions userId={me.id} text={stickerSuggestionQuery(draft)} choose={sticker => queueSticker(sticker, true)} />}
                   <form className="composer-open" onSubmit={submitMessage}>
                     {context && (
@@ -1165,7 +1270,9 @@ export function Beacon(): ReactNode {
                         placeholder="Сообщение"
                         value={draft}
                         maxLength={10000}
-                        onChange={(e) => setDraft(e.target.value)}
+                        onSelect={e=>setMentionCursor(e.currentTarget.selectionStart)}
+                        onBlur={()=>{activity(null);setMentionCursor(-1);}}
+                        onChange={(e) => {setDraft(e.target.value);setMentionCursor(e.target.selectionStart);activity(e.target.value.trim()?"typing":null);}}
                         onKeyDown={(e) => {
                           if (
                             e.key === "Enter" &&
@@ -1180,6 +1287,13 @@ export function Beacon(): ReactNode {
                       />
                     </div>
                     <div className="composer-actions live">
+                      <input type="file" aria-label="Выбрать файл или видео" ref={attachmentInput} hidden onChange={e=>{
+                        const file=e.target.files?.[0];e.target.value="";if(!file||!selected)return;
+                        const kind:AttachmentKind=file.type.startsWith("video/")||/\.(mp4|webm|mov|m4v|mkv|avi|mpeg|mpg|ts)$/iu.test(file.name)?"video":"file";
+                        if(!file.size||file.size>attachmentLimits[kind]){notify(new Error(`Допустимый размер: ${kind==="video"?"500":"100"} МБ`));return;}
+                        setAttachment({file,kind,chatId:selected});
+                      }}/>
+                      <button type="button" className="composer-action" aria-label="Прикрепить файл или видео" disabled={busy||context?.kind==="edit"||!!photos.length} onClick={()=>attachmentInput.current?.click()}><Icon name="file"/></button>
                       <button type="button" className="composer-action" aria-label="Записать голосовое сообщение" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("audio")}><Icon name="mic" /></button>
                       <button type="button" className="composer-action" aria-label="Записать видеокружок" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("circle")}><Icon name="video" /></button>
                       <button type="button" className="composer-action" aria-label="Выбрать стикер" disabled={busy || context?.kind === "edit"} onClick={() => setStickersOpen(true)}><Icon name="sticker" /></button>
@@ -1238,7 +1352,7 @@ export function Beacon(): ReactNode {
             )}
           </section>
           <nav className="mobile-bottom" aria-label="Навигация">
-            <button className="active">
+            <button className="active" onClick={()=>setSearchOpen(false)}>
               <Icon name="chats" />
               <span>Чаты</span>
             </button>
@@ -1261,7 +1375,7 @@ export function Beacon(): ReactNode {
           {nav}
           {section === "admin" && me.role === "admin" && <aside className="admin-sections">
             <header className="admin-sections-heading">
-              <button type="button" className="icon-button admin-mobile-back" aria-label="Назад к чатам" onClick={() => setSection("chats")}><Icon name="back" /></button>
+              <button type="button" className="icon-button admin-mobile-back" aria-label="Назад к чатам" onClick={() => {setSearchOpen(false);setSection("chats");}}><Icon name="back" /></button>
               <h1>Администрирование</h1>
             </header>
             <nav aria-label="Разделы администрирования">
@@ -1293,6 +1407,7 @@ export function Beacon(): ReactNode {
                       await authClient.signOut();
                       sessionStorage.removeItem(`pending:${me.id}`);
                       sessionStorage.removeItem(`update-drafts:${me.id}`);
+                      sessionStorage.removeItem(`beacon:unsynced-drafts:${me.id}`);
                       setMe(null);
                       setSection("chats");
                       closeChat();
@@ -1377,7 +1492,7 @@ export function Beacon(): ReactNode {
                         setModal("user");
                       }}
                     >
-                      <Avatar name={u.name} image={u.image} />
+                      <span className="presence-avatar"><Avatar name={u.name} image={u.image} />{!u.banned&&presence.people.get(u.id)?.online&&<span className="online-dot" aria-label="В сети"/>}</span>
                       <div className="user-copy">
                         <div className="user-name">
                           {u.name || "Профиль не заполнен"}
@@ -1402,7 +1517,12 @@ export function Beacon(): ReactNode {
           </main>
         </div>
       )}
-      {recordingKind && selected && <RecordingDialog key={`${selected}:${recordingKind}`} kind={recordingKind} chatId={selected} replyToId={context?.kind === "reply" ? context.message.id : undefined} notify={notify} close={() => setRecordingKind(null)} sent={async chatId => {
+      {attachmentsOpen&&selected&&current&&<ChatAttachments key={selected} chatId={selected} name={current.name} socket={socket} close={()=>setAttachmentsOpen(false)} photo={setPhotoView} jump={id=>void loadAround(selected,id).catch(notify)}/>}
+      {readDetails&&<ReadDetails key={readDetails.id} messageId={readDetails.id} chatId={readDetails.chatId} socket={socket} close={()=>setReadDetails(null)}/>}
+      {photoView&&<PhotoViewer key={`${photoView.chatId}:${photoView.messageId}`} target={photoView} socket={socket} close={()=>setPhotoView(null)}/>}
+      {deleting&&<Dialog title="Удалить сообщение?" close={()=>{if(!deleteBusy)setDeleting(null);}}><p>Сообщение будет удалено у всех участников переписки.</p><div className="inline-actions"><button type="button" className="primary-button" disabled={deleteBusy} onClick={()=>void removeMessage()}>{deleteBusy?"Удаляем…":"Удалить"}</button><button type="button" className="secondary-button" disabled={deleteBusy} onClick={()=>setDeleting(null)}>Отмена</button></div></Dialog>}
+      {attachment&&<AttachmentUpload key={`${attachment.chatId}:${attachment.file.name}`} {...attachment} replyToId={context?.kind==="reply"?context.message.id:undefined} close={()=>setAttachment(null)} notify={notify} sent={async id=>{if(selectedRef.current===id){setContext(null);await refreshHistory(id);}await refreshLists();}}/>}
+      {recordingKind && selected && <RecordingDialog key={`${selected}:${recordingKind}`} kind={recordingKind} activity={recording} chatId={selected} replyToId={context?.kind === "reply" ? context.message.id : undefined} notify={notify} close={() => setRecordingKind(null)} sent={async chatId => {
         if (selectedRef.current === chatId) { setContext(null); await refreshHistory(chatId); }
         await refreshLists();
       }} />}
@@ -1443,26 +1563,13 @@ export function Beacon(): ReactNode {
           </p>
         </Dialog>
       )}
-      {modal === "forward" && target && (
-        <Dialog title="Переслать сообщение" close={() => setModal(null)}>
-          {chats.map((c) => (
-            <button
-              className="secondary-button"
-              key={c.id}
-              onClick={() => {
-                const p = {
-                  chatId: c.id,
-                  clientMessageId: v7(),
-                  text: target.content.text,
-                  forwardId: target.id,
-                };
-                setPending((ps) => [...ps, p]);
-                setModal(null);
-              }}
-            >
-              {c.name}
-            </button>
-          ))}
+      {modal === "forward" && forwardSources.length>0 && (
+        <Dialog title={`Переслать сообщения · ${forwardSources.length}`} close={()=>setModal(null)}>
+          <p>Выберите переписку</p>
+          <div className="forward-destinations">
+            <button className="secondary-button" disabled={busy} onClick={()=>{setBusy(true);void ensureSaved().then(async chat=>{queueForwards(chat.id);await refreshLists();}).catch(notify).finally(()=>setBusy(false));}}><Icon name="bookmark"/>Избранное</button>
+            {chats.filter(c=>c.kind!=="saved").map(c=><button className="secondary-button" key={c.id} onClick={()=>queueForwards(c.id)}>{c.name}</button>)}
+          </div>
         </Dialog>
       )}
       {modal === "group" && details && (
@@ -1470,12 +1577,13 @@ export function Beacon(): ReactNode {
           {(details.chat.owner_id === me.id || me.role === "admin") && (
             <>
               <form
-                className="inline-actions"
+                className="group-settings-form"
                 key={details.chat.id}
                 onSubmit={(e) => {
                   e.preventDefault();
                   void manage({
                     title: new FormData(e.currentTarget).get("title"),
+                    description: new FormData(e.currentTarget).get("description"),
                   });
                 }}
               >
@@ -1487,6 +1595,7 @@ export function Beacon(): ReactNode {
                     maxLength={120}
                   />
                 </Field>
+                <Field label="Описание"><textarea name="description" defaultValue={details.chat.description??""} maxLength={2000}/></Field>
                 <button className="primary-button">Сохранить</button>
               </form>
               <AvatarPicker
@@ -1497,7 +1606,12 @@ export function Beacon(): ReactNode {
                 }}
                 notify={notify}
               />
-              <Field label="Добавить участника">
+
+            </>
+          )}
+          {details.chat.owner_id!==me.id && me.role!=="admin" && details.chat.description && <p className="group-description">{details.chat.description}</p>}
+          {details.members.some(u=>u.id===me.id) && (
+            <Field label="Добавить участника">
                 <select
                   defaultValue=""
                   onChange={(e) => {
@@ -1518,9 +1632,7 @@ export function Beacon(): ReactNode {
                       </option>
                     ))}
                 </select>
-              </Field>
-            </>
-          )}
+              </Field>)}
           {details.members.map((u) => (
             <div className="inline-actions" key={u.id}>
               <Avatar name={u.name} image={u.image} />

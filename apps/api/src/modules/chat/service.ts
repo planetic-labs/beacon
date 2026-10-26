@@ -1,3 +1,5 @@
+import { validateMentions } from "./mentions";
+import type { Mention } from "@beacon/shared";
 import { sql } from "drizzle-orm";
 import { db } from "../../db";
 import { HttpError } from "../../lib/http";
@@ -89,15 +91,16 @@ export async function createChat(
 }
 export async function chatList(u: Actor) {
   return rows(sql`
- select c.id,c.kind,c.title,c.owner_id as "ownerId",c.image,
+ select c.id,c.kind,c.title,c.description,m.pinned,c.owner_id as "ownerId",c.image,
  case when c.kind='direct' then (select m2.user_id from chat_member m2 where m2.chat_id=c.id and m2.user_id<>${u.id} limit 1) end as "peerId",
  case when c.kind='direct' then (select name from "user" u2 join chat_member m2 on m2.user_id=u2.id where m2.chat_id=c.id and u2.id<>${u.id} limit 1) else c.title end as name,
  case when c.kind='direct' then (select image from "user" u2 join chat_member m2 on m2.user_id=u2.id where m2.chat_id=c.id and u2.id<>${u.id} limit 1) else c.image end as avatar,
- case when last_msg.type='sticker' then 'Стикер: ' || (last_msg.content->>'text') else coalesce(nullif(last_msg.content->>'text',''),case when last_msg.type='photo' then 'Фото' end) end as preview,last_msg.created_at as "lastAt",
- (select count(*)::int from message msg where msg.chat_id=c.id and msg.author_id<>${u.id} and msg.created_at>m.last_read_at) as unread
+ case when last_msg.type in ('file','video') then coalesce(nullif(last_msg.content->>'text',''),case when last_msg.type='video' then 'Видео: ' else 'Файл: ' end || (last_msg.content->>'name')) when last_msg.type='sticker' then 'Стикер: ' || (last_msg.content->>'text') else coalesce(nullif(last_msg.content->>'text',''),case when last_msg.type='photo' then 'Фото' end) end as preview,last_msg.id as "lastMessageId",last_msg.created_at as "lastAt",
+ (select count(*)::int from message msg where msg.chat_id=c.id and msg.author_id<>${u.id} and msg.deleted_at is null and msg.created_at>m.last_read_at) as unread,
+ (select count(*)::int from message msg where msg.chat_id=c.id and msg.author_id<>${u.id} and msg.deleted_at is null and msg.created_at>m.last_read_at and msg.forwarded_from is null and msg.content->'mentions' @> ${JSON.stringify([{userId:u.id}])}::jsonb) as "unreadMentions"
  from chat c join chat_member m on m.chat_id=c.id and m.user_id=${u.id}
- left join lateral(select type,content,created_at from message where chat_id=c.id order by created_at desc,id desc limit 1) last_msg on true
- order by last_msg.created_at desc nulls last,name,c.id`);
+ left join lateral(select id,type,content,created_at from message where chat_id=c.id and deleted_at is null order by created_at desc,id desc limit 1) last_msg on true
+ order by m.pinned desc,last_msg.created_at desc nulls last,name,c.id`);
 }
 export async function history(
   chatId: string,
@@ -105,6 +108,7 @@ export async function history(
   cursor?: { at: string; id: string },
   after = false,
   inclusive = false,
+  throughId?: string,
 ) {
   await member(chatId, u);
   let bound = sql``;
@@ -115,10 +119,10 @@ export async function history(
         : sql`and (m.created_at,m.id)>(${cursor.at}::timestamptz,${cursor.id}::uuid)`
       : sql`and (m.created_at,m.id)<(${cursor.at}::timestamptz,${cursor.id}::uuid)`;
   const result =
-    await rows(sql`select m.id,m.chat_id as "chatId",m.author_id as "authorId",m.client_message_id as "clientMessageId",m.type,m.content,to_char(m.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "createdAt",m.edited_at as "editedAt",m.reply_to_id as "replyToId",m.forwarded_from as "forwardedFrom",u.name as "authorName",u.image as "authorImage",
+    await rows(sql`select m.id,m.chat_id as "chatId",m.author_id as "authorId",m.client_message_id as "clientMessageId",m.type,m.content,to_char(m.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "createdAt",m.edited_at as "editedAt",m.deleted_at as "deletedAt",exists(select 1 from pinned_message pm where pm.message_id=m.id) as pinned,m.reply_to_id as "replyToId",m.forwarded_from as "forwardedFrom",u.name as "authorName",u.image as "authorImage",
    (select json_build_object('id',r.id,'text',coalesce(nullif(r.content->>'text',''),case when r.type='photo' then 'Фото' end),'authorName',ru.name) from message r join "user" ru on ru.id=r.author_id where r.id=m.reply_to_id and r.chat_id=m.chat_id) as reply,
    coalesce((select json_agg(json_build_object('userId',r.user_id,'name',ur.name,'emoji',r.emoji)) from reaction r join "user" ur on ur.id=r.user_id where r.message_id=m.id),'[]'::json) as reactions
-   from message m join "user" u on u.id=m.author_id where m.chat_id=${chatId} and exists(select 1 from chat_member cm where cm.chat_id=m.chat_id and cm.user_id=${u.id}) ${bound} order by m.created_at ${after ? sql`asc` : sql`desc`},m.id ${after ? sql`asc` : sql`desc`} limit 51`);
+   from message m join "user" u on u.id=m.author_id where m.chat_id=${chatId} and exists(select 1 from chat_member cm where cm.chat_id=m.chat_id and cm.user_id=${u.id}) ${bound} ${throughId ? sql`and (m.created_at,m.id)<=(select created_at,id from message where id=${throughId} and chat_id=${chatId})` : sql``} order by m.created_at ${after ? sql`asc` : sql`desc`},m.id ${after ? sql`asc` : sql`desc`} limit 51`);
   return {
     messages: after ? result.slice(0, 50) : result.slice(0, 50).reverse(),
     hasMore: result.length > 50,
@@ -130,14 +134,18 @@ export async function send(
   input: {
     clientMessageId: string;
     text: string;
+    mentions?: Mention[];
     replyToId?: string;
     forwardId?: string;
     stickerId?: string;
+    attachment?: { id: string; name: string; size: number; mime: "application/octet-stream" | "video/mp4" | "video/webm"; kind: "file" | "video" };
     recording?: { id: string; mime: string; size: number; kind: "audio" | "circle"; duration: number };
     photos?: { id: string; mime: string; size: number }[];
   },
+  transaction?: Tx,
+  notify = true,
 ) {
-  return db.transaction(async (tx) => {
+  const run = async (tx:Tx) => {
     await writable(tx, u);
     await member(chatId, u, tx, true);
     const [old] = await rows(
@@ -150,12 +158,18 @@ export async function send(
       return { id: old.id };
     }
     let type = input.photos ? "photo" : "text";
-    let content: { text: string; fileId?: string; fileIds?: string[]; stickerId?: string; duration?: number } = input.photos
+    let content: { text: string; mentions?: Mention[]; name?: string; size?: number; mime?: string; fileId?: string; fileIds?: string[]; stickerId?: string; duration?: number } = input.photos
       ? messageTypes.photo.validate.parse({ text: input.text, fileIds: input.photos.map(photo => photo.id) })
-      : input.forwardId || input.stickerId || input.recording ? { text: "" } : messageTypes.text.validate.parse({ text: input.text });
+      : input.forwardId || input.stickerId || input.recording || input.attachment ? { text: "" } : messageTypes.text.validate.parse({ text: input.text });
     let forwarded = null;
     for (const photo of input.photos ?? []) {
       await tx.execute(sql`insert into media_file(id,owner_id,storage_key,mime,size) values(${photo.id},${u.id},${photo.id},${photo.mime},${photo.size})`);
+    }
+    if (input.attachment) {
+      const file = input.attachment;
+      type = file.kind;
+      content = messageTypes[file.kind].validate.parse({ text: input.text, fileId: file.id, name: file.name, size: file.size, mime: file.mime });
+      await tx.execute(sql`insert into media_file(id,owner_id,storage_key,mime,size,original_name) values(${file.id},${u.id},${file.id},${file.mime},${file.size},${file.name})`);
     }
     if (input.recording) {
       const recording = input.recording;
@@ -171,7 +185,7 @@ export async function send(
     }
     if (input.forwardId) {
       const [source] = await rows(
-        sql`select m.*,u.name from message m join "user" u on u.id=m.author_id join chat_member cm on cm.chat_id=m.chat_id and cm.user_id=${u.id} where m.id=${input.forwardId}`,
+        sql`select m.*,u.name from message m join "user" u on u.id=m.author_id join chat_member cm on cm.chat_id=m.chat_id and cm.user_id=${u.id} where m.id=${input.forwardId} and m.deleted_at is null for share of m`,
         tx,
       );
       if (!source)
@@ -185,17 +199,22 @@ export async function send(
     }
     if (input.replyToId) {
       const [r] = await rows(
-        sql`select id from message where id=${input.replyToId} and chat_id=${chatId}`,
+        sql`select id from message where id=${input.replyToId} and chat_id=${chatId} and deleted_at is null`,
         tx,
       );
       if (!r) throw new HttpError(400, "Сообщение для ответа недоступно");
+    }
+    if (!input.forwardId && ["text", "photo", "file", "video"].includes(type)) {
+      // Validators trim text; shift UTF-16 offsets by the removed leading whitespace.
+      const offset = input.text.length - input.text.trimStart().length;
+      content.mentions = await validateMentions(tx, chatId, content.text, input.mentions?.map(m=>({...m,start:m.start-offset})));
     }
     const id = v7();
     await tx.execute(
       sql`insert into message(id,chat_id,author_id,client_message_id,type,content,reply_to_id,forwarded_from) values(${id},${chatId},${u.id},${input.clientMessageId},${type},${JSON.stringify(content)}::jsonb,${input.replyToId ?? null},${forwarded ? JSON.stringify(forwarded) : null}::jsonb)`,
     );
     await tx.execute(sql`update chat set updated_at=now() where id=${chatId}`);
-    await event(tx, chatId);
+    if (notify) await event(tx, chatId);
     // The message and its per-device push jobs commit together. Replays return above.
     await tx.execute(sql`insert into push_delivery(subscription_id,message_id)
       select ps.id,${id} from push_subscription ps
@@ -207,6 +226,7 @@ export async function send(
       where ps.user_id<>${u.id} and coalesce(np.enabled,true) and not coalesce(cp.muted,false)
       for key share of ps
       on conflict do nothing`);
-    return { id, ...(input.recording ? { recordingId: input.recording.id } : {}), ...(input.photos ? { photoIds: input.photos.map(photo => photo.id) } : {}) };
-  });
+    return { id, ...(input.attachment ? { attachmentId: input.attachment.id } : {}), ...(input.recording ? { recordingId: input.recording.id } : {}), ...(input.photos ? { photoIds: input.photos.map(photo => photo.id) } : {}) };
+  };
+  return transaction ? run(transaction) : db.transaction(run);
 }

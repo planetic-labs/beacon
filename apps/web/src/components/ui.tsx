@@ -109,24 +109,30 @@ export function AvatarPicker({
     </Field>
   );
 }
+const dialogStack:symbol[]=[];
 export function Dialog({
   title,
   close,
   children,
+  className="",
 }: {
+  className?:string;
   title: string;
   close: () => void;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const closeRef=useRef(close);closeRef.current=close;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement;
+    const token=Symbol();dialogStack.push(token);
     ref.current?.focus();
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if(dialogStack.at(-1)!==token)return;
+      if (e.key === "Escape") {e.preventDefault();e.stopImmediatePropagation();closeRef.current();}
       if (e.key === "Tab") {
         const nodes = ref.current?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled),input,select,textarea,[tabindex="0"]',
+          'button:not(:disabled),a[href],input,select,textarea,video[controls],audio[controls],[tabindex="0"]',
         );
         if (!nodes?.length) return;
         const first = nodes[0],
@@ -143,18 +149,20 @@ export function Dialog({
     document.addEventListener("keydown", key);
     return () => {
       document.removeEventListener("keydown", key);
-      previous?.focus();
+      const top=dialogStack.at(-1)===token;
+      const index=dialogStack.indexOf(token);if(index>=0)dialogStack.splice(index,1);
+      if(top&&previous?.isConnected)previous.focus();
     };
   }, []);
   return (
     <div
-      className="dialog-backdrop"
+      className={`dialog-backdrop ${className?`${className}-backdrop`:""}`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) close();
       }}
     >
       <div
-        className="dialog"
+        className={`dialog ${className}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

@@ -46,11 +46,11 @@ export async function mute(u: Actor, chatId: string, muted: boolean) {
 // Recheck authorization both before delivery and when the device receives the push.
 export async function notification(subscriptionId: string, messageId: string, userId?: string, sessionId?: string) {
   const [row] = await rows(sql`select ps.id as "subscriptionId",ps.user_id as "userId",ps.endpoint,ps.p256dh,ps.auth,
-    m.id as "messageId",m.chat_id as "chatId",coalesce(nullif(m.content->>'text',''),case when m.type='photo' then 'Фото' end) as text,author.name as "authorName",c.kind,c.title,
+    m.id as "messageId",m.chat_id as "chatId",coalesce(nullif(m.content->>'text',''),case when m.type='photo' then 'Фото' when m.type='video' then 'Видео: ' || (m.content->>'name') when m.type='file' then 'Файл: ' || (m.content->>'name') end) as text,author.name as "authorName",c.kind,c.title,
     coalesce(np.show_preview,false) as "showPreview"
     from push_subscription ps join session s on s.id=ps.session_id and s.expires_at>now()
     join "user" recipient on recipient.id=ps.user_id and not recipient.banned
-    join message m on m.id=${messageId} and m.author_id<>ps.user_id and m.created_at>now()-interval '24 hours'
+    join message m on m.id=${messageId} and m.deleted_at is null and m.author_id<>ps.user_id and m.created_at>now()-interval '24 hours'
     join chat_member cm on cm.chat_id=m.chat_id and cm.user_id=ps.user_id and m.created_at>cm.last_read_at
     join chat c on c.id=m.chat_id join "user" author on author.id=m.author_id
     left join notification_preference np on np.user_id=ps.user_id
