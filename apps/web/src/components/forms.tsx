@@ -1,3 +1,4 @@
+import { suggestPasskeyLabel } from "../lib/passkey-label";
 import { useState, useEffect } from "react";
 import { authClient } from "@/auth-client";
 import type { User, Group } from "@beacon/shared";
@@ -91,8 +92,11 @@ export function Profile({
     </form>
   );
 }
-export function Security({ notify }: { notify: (e: unknown) => void }) {
-  const [keys, setKeys] = useState<{ id: string; name?: string | null }[]>([]);
+export function Security({ email, notify }: { email: string | undefined; notify: (e: unknown) => void }) {
+  const [keys, setKeys] = useState<{ id: string; name?: string | null; createdAt?: string | Date }[]>([]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
   async function refresh() {
     const r = await authClient.passkey.listUserPasskeys();
     if (r.error) throw new Error("Не удалось загрузить ключи");
@@ -109,36 +113,68 @@ export function Security({ notify }: { notify: (e: unknown) => void }) {
         запасным способом.
       </p>
       {keys.map((k) => (
-        <div className="inline-actions" key={k.id}>
-          <span>{k.name || "Ключ доступа"}</span>
+        <div className="passkey-row" key={k.id}>
+          {editing === k.id ? (
+            <form className="inline-actions" onSubmit={async event => {
+              event.preventDefault();
+              if (busy || !label.trim()) return;
+              setBusy(true);
+              try {
+                const result = await authClient.passkey.updatePasskey({ id: k.id, name: label.trim() });
+                if (result.error) throw new Error("Не удалось переименовать ключ");
+                await refresh();
+                setEditing(null);
+              } catch (e) { notify(e); }
+              finally { setBusy(false); }
+            }}>
+              <input aria-label="Название ключа" value={label} maxLength={80} required disabled={busy} onChange={event => setLabel(event.target.value)} />
+              <button className="text-button" disabled={busy || !label.trim()}>Сохранить название</button>
+              <button type="button" className="text-button" disabled={busy} onClick={() => setEditing(null)}>Отмена</button>
+            </form>
+          ) : (
+            <div className="inline-actions">
+              <strong>{k.name || "Ключ доступа"}</strong>
+              <button type="button" className="text-button" disabled={busy} onClick={() => { setEditing(k.id); setLabel(k.name ?? ""); }}>Переименовать</button>
+            </div>
+          )}
+          {k.createdAt && <span className="field-note">Создан {new Date(k.createdAt).toLocaleDateString("ru")}</span>}
           <button
+            type="button"
+            disabled={busy}
             className="text-button"
             onClick={async () => {
               try {
+                setBusy(true);
                 const r = await authClient.passkey.deletePasskey({ id: k.id });
                 if (r.error) throw new Error("Не удалось удалить ключ");
                 await refresh();
+                if (editing === k.id) setEditing(null);
               } catch (e) {
                 notify(e);
-              }
+              } finally { setBusy(false); }
             }}
           >
             Удалить ключ
           </button>
         </div>
       ))}
+      <p className="field-note">Название можно изменить, например на «Samsung» или «MacBook». При входе браузер показывает email аккаунта.</p>
       <button
+        type="button"
         className="secondary-button"
+        disabled={busy}
         onClick={async () => {
+          setBusy(true);
           try {
+            if (!email) throw new Error("Не удалось определить email аккаунта");
             const r = await authClient.passkey.addPasskey({
-              name: "Мой ключ доступа",
+              name: suggestPasskeyLabel(navigator),
             });
             if (r.error) throw new Error("Не удалось добавить ключ");
             await refresh();
           } catch (e) {
             notify(e);
-          }
+          } finally { setBusy(false); }
         }}
       >
         Добавить ключ доступа

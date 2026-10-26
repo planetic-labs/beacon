@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {},
   "dependencies": {
+    "emoji-regex": "11.0.0",
     "zod": "4.6.7"
   },
   "exports": "./src/index.ts"

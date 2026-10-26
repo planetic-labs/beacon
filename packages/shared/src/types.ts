@@ -29,7 +29,7 @@ export type Message = {
   authorName: string;
   authorImage?: string;
   clientMessageId: string;
-  content: { text: string };
+  content: { text: string; fileId?: string; fileIds?: string[]; stickerId?: string; duration?: number };
   createdAt: string;
   editedAt?: string;
   replyToId?: string;
@@ -43,6 +43,7 @@ export type Pending = {
   text: string;
   replyToId?: string;
   forwardId?: string;
+  stickerId?: string;
   failed?: boolean;
 };
 export type Group = {
@@ -51,3 +52,6 @@ export type Group = {
   code: string;
   members: string[];
 };
+
+export type Sticker = { id: string; fileId: string; label: string; emojis?: string[]; keywords?: string[] };
+export type StickerPack = { id: string; name: string; active: boolean; stickers: Sticker[] };

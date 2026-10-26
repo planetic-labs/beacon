@@ -27,6 +27,10 @@ const createAuth = () => betterAuth({
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
+      // Keep the authenticator's account name as email. The label supplied by
+      // the UI is stored separately during verification for Beacon's key list.
+      if (ctx.path === "/passkey/generate-register-options" && ctx.query)
+        delete ctx.query.name;
       if (typeof ctx.body?.email === "string") ctx.body.email = normalizeEmail(ctx.body.email);
       if (typeof ctx.query?.email === "string") ctx.query.email = normalizeEmail(ctx.query.email);
     }),

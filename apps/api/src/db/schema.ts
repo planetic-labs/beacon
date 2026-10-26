@@ -400,3 +400,19 @@ export const oauthClientAssertion = pgTable("oauth_client_assertion", {
   id: text("id").primaryKey(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
+
+export const stickerPacks = pgTable("sticker_pack", {
+  id: id(),
+  name: text("name").notNull(),
+  active: boolean("active").notNull().default(true),
+  createdAt: time("created_at"),
+});
+export const stickers = pgTable("sticker", {
+  id: id(),
+  packId: uuid("pack_id").notNull().references(() => stickerPacks.id),
+  fileId: uuid("file_id").notNull().unique().references(() => files.id),
+  label: text("label").notNull(),
+  emojis: text("emojis").array().notNull().default(sql`'{}'::text[]`),
+  keywords: text("keywords").array().notNull().default(sql`'{}'::text[]`),
+  createdAt: time("created_at"),
+}, t => [index("sticker_pack_idx").on(t.packId)]);

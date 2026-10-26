@@ -13,6 +13,7 @@
     "@simplewebauthn/browser": "14.0.0",
     "@tanstack/react-router": "1.170.46",
     "better-auth": "1.7.12",
+    "fuse.js": "7.5.0",
     "lucide-react": "1.61.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",

@@ -8,19 +8,20 @@
     "start": "tsx src/server.ts"
   },
   "dependencies": {
+    "@beacon/shared": "workspace:*",
     "@better-auth/oauth-provider": "1.7.12",
     "@better-auth/passkey": "1.7.12",
+    "@fastify/middie": "9.3.6",
+    "@fastify/static": "10.1.7",
     "better-auth": "1.7.12",
     "drizzle-orm": "0.45.4",
+    "fastify": "5.12.7",
     "pg": "8.23.1",
+    "sharp": "0.35.5",
     "socket.io": "4.8.4",
     "uuid": "14.0.3",
     "web-push": "3.6.7",
-    "zod": "4.6.7",
-    "fastify": "5.12.7",
-    "@fastify/static": "10.1.7",
-    "@fastify/middie": "9.3.6",
-    "@beacon/shared": "workspace:*"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "vite": "8.3.5"

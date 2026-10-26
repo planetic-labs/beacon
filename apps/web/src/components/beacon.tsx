@@ -1,4 +1,4 @@
-import { normalizeEmail } from "@beacon/shared";
+import { normalizeEmail, stickerSuggestionQuery, type Sticker, type RecordingKind } from "@beacon/shared";
 import {
   useState,
   useEffect,
@@ -11,6 +11,9 @@ import { io, Socket } from "socket.io-client";
 import { useLocation, useNavigate, useSearch } from "@tanstack/react-router";
 import { v7 } from "uuid";
 import { authClient, beginPasskeyAutofill } from "@/auth-client";
+import { PhotoThumbnail } from "./photo-thumbnail";
+import { RecordingDialog } from "./recording";
+import { StickerAdmin, StickerPicker, StickerSuggestions } from "./stickers";
 import { Icon } from "./icon";
 import { renderMessage } from "./message-types";
 
@@ -19,12 +22,24 @@ import { api, ApiError, Avatar, Field, AvatarPicker, Dialog } from "./ui";
 import { Profile, Security, NewChat, UserForm, MembershipForm } from "./forms";
 import { PushSettings, ChatPushToggle, forgetPushDevice, pushWorker, syncPushDevice } from "./push-settings";
 export function Beacon(): ReactNode {
+  const [recordingKind, setRecordingKind] = useState<RecordingKind | null>(null);
+  const [stickersOpen, setStickersOpen] = useState(false);
+  const [photos, setPhotos] = useState<File[]>([]);
+  const photoMessageId = useRef(v7());
+  const photoInput = useRef<HTMLInputElement>(null);
   const [upcomingService, setUpcomingService] = useState<string | null>(null);
   const stopPasskeyAutofill = useRef<(() => void) | null>(null);
   const navigate = useNavigate();
   const pathname = useLocation({ select: location => location.pathname });
   const legacyChat = useSearch({ strict: false }).chat;
-  const section = pathname === "/profile" ? "profile" : pathname === "/admin" ? "admin" : "chats";
+  const section = pathname === "/profile" ? "profile" : pathname === "/admin" || pathname.startsWith("/admin/") ? "admin" : "chats";
+  const adminSections = [
+    { path: "/admin/users", title: "Пользователи", icon: "profile" },
+    { path: "/admin/stickers", title: "Стикеры", icon: "sticker" },
+    { path: "/admin/groups", title: "Группы пользователей", icon: "users" },
+    { path: "/admin/chats", title: "Групповые чаты", icon: "chats" },
+  ] as const;
+  const adminPage = adminSections.find(item => item.path === pathname) ?? adminSections[0];
   const sectionRoutes = { chats: "/", admin: "/admin", profile: "/profile" } as const;
   const setSection = (value: keyof typeof sectionRoutes) => { void navigate({ to: sectionRoutes[value], search: {} }); };
   const closeChat = () => { setSelected(null); selectedRef.current = null; void navigate({ to: "/", search: {} }); };
@@ -417,9 +432,27 @@ export function Beacon(): ReactNode {
       setBusy(false);
     }
   }
+  useEffect(() => { setPhotos([]); setRecordingKind(null); }, [selected]);
   async function submitMessage(e: FormEvent) {
     e.preventDefault();
-    if (!selected || !draft.trim() || busy) return;
+    if (!selected || (!draft.trim() && !photos.length) || busy) return;
+    if (photos.length && context?.kind !== "edit") {
+      const chatId = selected;
+      setBusy(true);
+      try {
+        const form = new FormData();
+        photos.forEach(photo => form.append("file", photo)); form.set("chatId", chatId);
+        form.set("clientMessageId", photoMessageId.current); form.set("text", draft);
+        if (context?.message.id) form.set("replyToId", context.message.id);
+        const response = await fetch("/api/photos", { method: "POST", body: form, signal: AbortSignal.timeout(120000) });
+        if (response.status === 401) window.dispatchEvent(new Event("beacon:unauthorized"));
+        if (!response.ok) throw new Error((await response.json()).error || "Не удалось отправить фото");
+        drafts.current[chatId] = "";
+        if (selectedRef.current === chatId) { setPhotos([]); setDraft(""); setContext(null); }
+        await refreshHistory(chatId); await refreshLists();
+      } catch (e) { notify(e); } finally { setBusy(false); }
+      return;
+    }
     if (context?.kind === "edit") {
       setBusy(true);
       try {
@@ -443,6 +476,16 @@ export function Beacon(): ReactNode {
     setPending((ps) => [...ps, p]);
     setDraft("");
     drafts.current[selected] = "";
+    setContext(null);
+  }
+  function queueSticker(sticker: Sticker, removeTrigger = false) {
+    if (!selected || busy || context?.kind === "edit") return;
+    setPending(items => [...items, { chatId: selected, clientMessageId: v7(), text: `Стикер: ${sticker.label}`, stickerId: sticker.id, replyToId: context?.kind === "reply" ? context.message.id : undefined }]);
+    if (removeTrigger) {
+      const query = stickerSuggestionQuery(draft);
+      const next = query ? draft.trimEnd().slice(0, -query.length) : draft;
+      setDraft(next); drafts.current[selected] = next;
+    }
     setContext(null);
   }
   async function reaction(emoji: string) {
@@ -678,7 +721,16 @@ export function Beacon(): ReactNode {
   };
   const nav = (
     <aside className="nav-rail" aria-label="Основная навигация">
-      <div className="brand-mark">П</div>
+      <button
+        type="button"
+        className="rail-action"
+        aria-label="Главная"
+        aria-haspopup="dialog"
+        onClick={() => setUpcomingService("Главная")}
+      >
+        <Icon name="home" />
+        <span className="rail-tooltip" aria-hidden="true">Главная</span>
+      </button>
       <button
         className={`rail-action ${section === "chats" ? "active" : ""}`}
         onClick={() => setSection("chats")}
@@ -708,10 +760,10 @@ export function Beacon(): ReactNode {
         <button
           className={`rail-action ${section === "admin" ? "active" : ""}`}
           onClick={() => setSection("admin")}
-          aria-label="Управление"
+          aria-label="Администрирование"
         >
           <Icon name="settings" />
-          <span className="rail-tooltip" aria-hidden="true">Управление</span>
+          <span className="rail-tooltip" aria-hidden="true">Администрирование</span>
         </button>
       )}
       <span className="rail-spacer" />
@@ -935,7 +987,7 @@ export function Beacon(): ReactNode {
                               <div className="author">{m.authorName}</div>
                             )}
                             <div className="bubble-row">
-                              <div className="bubble">
+                              <div className={`bubble ${m.type === "sticker" ? "sticker-bubble" : ""}`}>
                                 {m.forwardedFrom && (
                                   <div className="forwarded">
                                     Переслано · {m.forwardedFrom.authorName}
@@ -950,7 +1002,7 @@ export function Beacon(): ReactNode {
                                   </button>
                                 )}
                                 <span className="bubble-text">
-                                  {m.content.text}
+                                  {renderMessage(m.type, m.content)}
                                 </span>
                                 <span className="message-meta">
                                   {m.editedAt && (
@@ -1012,7 +1064,7 @@ export function Beacon(): ReactNode {
                               >
                                 Переслать
                               </button>
-                              {m.authorId === me.id && (
+                              {m.authorId === me.id && ["text", "photo"].includes(m.type) && (
                                 <button
                                   onClick={() => chooseContext("edit", m)}
                                 >
@@ -1077,6 +1129,7 @@ export function Beacon(): ReactNode {
                   className="composer-dock"
                   data-composer-state={context?.kind ?? "input"}
                 >
+                  {context?.kind !== "edit" && !busy && !photos.length && <StickerSuggestions userId={me.id} text={stickerSuggestionQuery(draft)} choose={sticker => queueSticker(sticker, true)} />}
                   <form className="composer-open" onSubmit={submitMessage}>
                     {context && (
                       <div className="composer-context">
@@ -1086,7 +1139,7 @@ export function Beacon(): ReactNode {
                             : `Ответ · ${context.message.authorName}`}
                         </div>
                         <div className="composer-context-text">
-                          {context.message.content.text}
+                          {context.message.content.text || (context.message.type === "photo" ? "Фото" : "")}
                         </div>
                         <button
                           className="composer-context-close"
@@ -1098,12 +1151,14 @@ export function Beacon(): ReactNode {
                         </button>
                       </div>
                     )}
+                    {!!photos.length && <div className="photo-previews">{photos.map((photo, index) => <div className="photo-preview" key={index}><PhotoThumbnail file={photo} index={index} /><button type="button" aria-label={`Убрать фото ${index + 1}`} disabled={busy} onClick={() => { photoMessageId.current = v7(); setPhotos(items => items.filter((_, i) => i !== index)); }}>Убрать</button></div>)}</div>}
                     <div className="composer-body">
                       <label className="sr-only" htmlFor="composer">
                         Сообщение
                       </label>
                       <textarea
                         ref={textarea}
+                        disabled={busy && !!photos.length}
                         id="composer"
                         className="composer-input"
                         rows={device === "mobile" ? 1 : 2}
@@ -1125,6 +1180,17 @@ export function Beacon(): ReactNode {
                       />
                     </div>
                     <div className="composer-actions live">
+                      <button type="button" className="composer-action" aria-label="Записать голосовое сообщение" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("audio")}><Icon name="mic" /></button>
+                      <button type="button" className="composer-action" aria-label="Записать видеокружок" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("circle")}><Icon name="video" /></button>
+                      <button type="button" className="composer-action" aria-label="Выбрать стикер" disabled={busy || context?.kind === "edit"} onClick={() => setStickersOpen(true)}><Icon name="sticker" /></button>
+                      <input ref={photoInput} type="file" multiple className="sr-only" aria-label="Выбрать фото" accept="image/jpeg,image/png,image/webp" disabled={busy || context?.kind === "edit"} onChange={e => {
+                        const files = Array.from(e.target.files ?? []); e.target.value = "";
+                        if (!files.length) return;
+                        if (photos.length + files.length > 10) { notify(new Error("Можно отправить до 10 фотографий за раз")); return; }
+                        if (files.some(file => !file.size || file.size > 5 * 1024 * 1024 || !["image/jpeg", "image/png", "image/webp"].includes(file.type))) { notify(new Error("Выберите PNG, JPEG или WebP до 5 МБ каждый")); return; }
+                        photoMessageId.current = v7(); setPhotos(items => [...items, ...files]);
+                      }} />
+                      <button type="button" className="composer-action" aria-label="Прикрепить фото" disabled={busy || context?.kind === "edit"} onClick={() => photoInput.current?.click()}><Icon name="photo" /></button>
                       <button
                         className="composer-action"
                         type="button"
@@ -1141,7 +1207,7 @@ export function Beacon(): ReactNode {
                       </button>
                       <button
                         className="composer-action send-button"
-                        disabled={!draft.trim() || busy}
+                        disabled={(!draft.trim() && !photos.length) || busy}
                         aria-label={
                           context?.kind === "edit"
                             ? "Сохранить изменения"
@@ -1179,7 +1245,7 @@ export function Beacon(): ReactNode {
             {me.role === "admin" ? (
               <button onClick={() => setSection("admin")}>
                 <Icon name="settings" />
-                <span>Управление</span>
+                <span>Администрирование</span>
               </button>
             ) : (
               <span />
@@ -1191,32 +1257,34 @@ export function Beacon(): ReactNode {
           </nav>
         </div>
       ) : (
-        <div className="admin-shell">
+        <div className={`admin-shell ${section === "admin" && me.role === "admin" ? "administration-shell" : ""} ${pathname !== "/admin" ? "has-admin-page" : ""}`}>
           {nav}
+          {section === "admin" && me.role === "admin" && <aside className="admin-sections">
+            <header className="admin-sections-heading">
+              <button type="button" className="icon-button admin-mobile-back" aria-label="Назад к чатам" onClick={() => setSection("chats")}><Icon name="back" /></button>
+              <h1>Администрирование</h1>
+            </header>
+            <nav aria-label="Разделы администрирования">
+              {adminSections.map(item => <button type="button" key={item.path}
+                className={`admin-section-row ${adminPage.path === item.path ? "active" : ""}`}
+                aria-current={adminPage.path === item.path ? "page" : undefined}
+                onClick={() => void navigate({ to: item.path, search: {} })}>
+                <Icon name={item.icon} /><span>{item.title}</span>
+              </button>)}
+            </nav>
+          </aside>}
           <main className="settings">
             <header className="admin-header">
-              <button
-                className="icon-button"
-                onClick={() => setSection("chats")}
-                aria-label="Назад к чатам"
-              >
-                <Icon name="back" />
-              </button>
-              <div className="admin-title">
-                <h1>
-                  {section === "profile"
-                    ? "Профиль"
-                    : section === "admin"
-                      ? "Управление"
-                      : "Участники"}
-                </h1>
-              </div>
+              <button type="button" className={`icon-button ${section === "admin" ? "admin-mobile-back" : ""}`}
+                onClick={() => setSection(section === "admin" ? "admin" : "chats")}
+                aria-label={section === "admin" ? "Назад к разделам" : "Назад к чатам"}><Icon name="back" /></button>
+              <div className="admin-title"><h1>{section === "profile" ? "Профиль" : adminPage.title}</h1></div>
             </header>
             <div className="settings-main">
               {section === "profile" ? (
                 <>
                   <Profile me={me} refresh={refreshMe} notify={notify} />
-                  <Security notify={notify} />
+                  <Security email={me.email} notify={notify} />
                   <PushSettings notify={notify}/>
                   <button
                     className="secondary-button"
@@ -1235,103 +1303,110 @@ export function Beacon(): ReactNode {
                     Выйти из аккаунта
                   </button>
                 </>
-              ) : (
-                <>
-                  <div className="settings-card">
-                    <div className="panel-heading">
-                      <strong>Пользователи</strong>
-                      <button
-                        className="primary-button"
-                        onClick={() => {
-                          setEditUser(null);
-                          setModal("user");
-                        }}
-                      >
-                        Создать
-                      </button>
-                    </div>
-                    {users.map((u) => (
-                      <button
-                        className="user-row editable"
-                        key={u.id}
-                        onClick={() => {
-                          setEditUser(u);
-                          setModal("user");
-                        }}
-                      >
-                        <Avatar name={u.name} image={u.image} />
-                        <div className="user-copy">
-                          <div className="user-name">
-                            {u.name || "Профиль не заполнен"}
-                          </div>
-                          <div className="user-email">{u.email}</div>
-                        </div>
-                        <span className="role-label">
-                          {u.role === "admin"
-                            ? "Администратор"
-                            : "Пользователь"}
-                        </span>
-                        <span
-                          className={`status-label ${!u.banned ? "active" : ""}`}
-                        >
-                          {u.banned ? "Заблокирован" : "Активен"}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="settings-card">
-                    <div className="panel-heading">
-                      <strong>Группы пользователей</strong>
-                      <button
-                        className="primary-button"
-                        onClick={async () => {
-                          try {
-                            setGroups(await api("admin/groups"));
-                            setEditGroup(null);
-                            setModal("membership");
-                          } catch (e) {
-                            notify(e);
-                          }
-                        }}
-                      >
-                        Управление
-                      </button>
-                    </div>
-                  </div>
-                  <div className="settings-card">
-                    <h2>Все групповые чаты</h2>
+              ) : me.role !== "admin" ? <p>Этот раздел доступен только администраторам.</p>
+              : adminPage.path === "/admin/stickers" ? <StickerAdmin notify={notify} />
+              : adminPage.path === "/admin/groups" ? (
+                <div className="settings-card">
+                  <div className="panel-heading">
+                    <strong>Группы пользователей</strong>
                     <button
-                      className="secondary-button"
+                      className="primary-button"
                       onClick={async () => {
                         try {
-                          setAllGroups(await api("admin/chats"));
+                          setGroups(await api("admin/groups"));
+                          setEditGroup(null);
+                          setModal("membership");
                         } catch (e) {
                           notify(e);
                         }
                       }}
                     >
-                      Показать список
+                      Управление
                     </button>
-                    {allGroups.map((c) => (
-                      <button
-                        key={c.id}
-                        className="secondary-button"
-                        onClick={() => void loadManagement(c.id)}
-                      >
-                        {c.title}
-                      </button>
-                    ))}
-                    <p className="field-note">
-                      Управление не открывает переписку. Читать её могут только
-                      участники.
-                    </p>
                   </div>
-                </>
+                </div>
+              ) : adminPage.path === "/admin/chats" ? (
+                <div className="settings-card">
+                  <h2>Все групповые чаты</h2>
+                  <button
+                    className="secondary-button"
+                    onClick={async () => {
+                      try {
+                        setAllGroups(await api("admin/chats"));
+                      } catch (e) {
+                        notify(e);
+                      }
+                    }}
+                  >
+                    Показать список
+                  </button>
+                  {allGroups.map((c) => (
+                    <button
+                      key={c.id}
+                      className="secondary-button"
+                      onClick={() => void loadManagement(c.id)}
+                    >
+                      {c.title}
+                    </button>
+                  ))}
+                  <p className="field-note">
+                    Управление не открывает переписку. Читать её могут только
+                    участники.
+                  </p>
+                </div>
+              ) : (
+                <div className="settings-card">
+                  <div className="panel-heading">
+                    <strong>Пользователи</strong>
+                    <button
+                      className="primary-button"
+                      onClick={() => {
+                        setEditUser(null);
+                        setModal("user");
+                      }}
+                    >
+                      Создать
+                    </button>
+                  </div>
+                  {users.map((u) => (
+                    <button
+                      className="user-row editable"
+                      key={u.id}
+                      onClick={() => {
+                        setEditUser(u);
+                        setModal("user");
+                      }}
+                    >
+                      <Avatar name={u.name} image={u.image} />
+                      <div className="user-copy">
+                        <div className="user-name">
+                          {u.name || "Профиль не заполнен"}
+                        </div>
+                        <div className="user-email">{u.email}</div>
+                      </div>
+                      <span className="role-label">
+                        {u.role === "admin"
+                          ? "Администратор"
+                          : "Пользователь"}
+                      </span>
+                      <span
+                        className={`status-label ${!u.banned ? "active" : ""}`}
+                      >
+                        {u.banned ? "Заблокирован" : "Активен"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
           </main>
         </div>
       )}
+      {recordingKind && selected && <RecordingDialog key={`${selected}:${recordingKind}`} kind={recordingKind} chatId={selected} replyToId={context?.kind === "reply" ? context.message.id : undefined} notify={notify} close={() => setRecordingKind(null)} sent={async chatId => {
+        if (selectedRef.current === chatId) { setContext(null); await refreshHistory(chatId); }
+        await refreshLists();
+      }} />}
+      {stickersOpen && me && selected && <StickerPicker userId={me.id} notify={notify} close={() => setStickersOpen(false)} choose={sticker => queueSticker(sticker)} />}
       {upcomingService && (
         <Dialog title={upcomingService} close={() => setUpcomingService(null)}>
           <div className="empty-state"><h2>В разработке</h2></div>

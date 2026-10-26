@@ -46,7 +46,7 @@ export async function mute(u: Actor, chatId: string, muted: boolean) {
 // Recheck authorization both before delivery and when the device receives the push.
 export async function notification(subscriptionId: string, messageId: string, userId?: string, sessionId?: string) {
   const [row] = await rows(sql`select ps.id as "subscriptionId",ps.user_id as "userId",ps.endpoint,ps.p256dh,ps.auth,
-    m.id as "messageId",m.chat_id as "chatId",m.content->>'text' as text,author.name as "authorName",c.kind,c.title,
+    m.id as "messageId",m.chat_id as "chatId",coalesce(nullif(m.content->>'text',''),case when m.type='photo' then 'Фото' end) as text,author.name as "authorName",c.kind,c.title,
     coalesce(np.show_preview,false) as "showPreview"
     from push_subscription ps join session s on s.id=ps.session_id and s.expires_at>now()
     join "user" recipient on recipient.id=ps.user_id and not recipient.banned

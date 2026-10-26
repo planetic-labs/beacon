@@ -25,7 +25,7 @@ const server = createServer(async (request, response) => {
     if (path.startsWith("/api/")) {
       response.setHeader("Content-Type", "application/json");
       const data = path === "/api/v1/me" ? user : path === "/api/v1/users" ? [user, peer]
-        : path === "/api/v1/chats" ? [chat] : { messages: [], hasMore: false };
+        : path === "/api/v1/chats" ? [chat] : path === "/api/stickers" ? [] : { messages: [], hasMore: false };
       response.end(JSON.stringify(data)); return;
     }
     if (path.startsWith("/socket.io/") || path.startsWith("/media/") || path.startsWith("/.well-known/")) {
