@@ -9,7 +9,18 @@ try{
  for(const user of [fixtures.users[0],fixtures.users[0],fixtures.users[1]]){
   const context=await browser.newContext({viewport:{width:1440,height:900},serviceWorkers:"block"});
   await context.addCookies([{name:user.cookieName,value:user.cookieValue,url:base}]);
-  await context.route("**/socket.io/**",async route=>{try{const url=new URL(route.request().url());url.port=new URL(process.env.TEST_SOCKET_URL??"http://localhost:3001").port;const response=await route.fetch({url:url.toString(),headers:{...route.request().headers(),origin:base}});await route.fulfill({response});}catch{await route.abort();}});
+  await context.route("**/socket.io/**",async route=>{
+   const url=new URL(route.request().url());url.port=new URL(process.env.TEST_SOCKET_URL??"http://localhost:3001").port;
+   let response;
+   try{response=await route.fetch({url:url.toString(),headers:{...route.request().headers(),origin:base}});}
+   catch{
+    // Navigation can cancel an intercepted request before this fallback runs.
+    try{await route.abort();}catch(error){if(!(error instanceof Error&&error.message.includes("Route is already handled")))throw error;}
+    return;
+   }
+   // Never try aborting a route after fulfill has claimed it.
+   await route.fulfill({response});
+  });
   contexts.push(context);
  }
  const [a,b,other]=await Promise.all(contexts.map(c=>c.newPage()));
@@ -39,5 +50,8 @@ try{
   await a.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-chat-preferences-${width}.png`});
  }
  assert.deepEqual(errors,[]);console.log("PASS private draft sync, send clearing, reload, personal pins, group description and mobile layout");
- for(const context of contexts)await context.close();
-}finally{await browser.close();}
+}finally{
+ // Drain route callbacks before closing contexts; application requests may still be in flight.
+ for(const context of browser.contexts())await context.unrouteAll({behavior:"wait"});
+ await browser.close();
+}
