@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const { version } = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {version:string};
 
 export default defineConfig({
-  define: { "import.meta.env.VITE_APP_VERSION": JSON.stringify(version), "import.meta.env.VITE_BUILD_TIME": JSON.stringify(new Date().toISOString()) },
+  define: { "import.meta.env.VITE_APP_VERSION": JSON.stringify(process.env.BEACON_RELEASE_VERSION || version), "import.meta.env.VITE_BUILD_TIME": JSON.stringify(new Date().toISOString()) },
   plugins: [react(), shellCache()],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   server: {
