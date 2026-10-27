@@ -1,0 +1,157 @@
+name: Release image
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+concurrency:
+  group: release-image-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    outputs:
+      image: ${{ steps.release.outputs.image }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      revision: ${{ steps.release.outputs.revision }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Resolve checked-out release commit
+        id: commit
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Require main CI and security analysis for this commit
+        id: release
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RELEASE_REVISION: ${{ steps.commit.outputs.revision }}
+        with:
+          script: |
+            const validate = require('./.github/scripts/release-image.cjs');
+            await validate({github, context, core, revision: process.env.RELEASE_REVISION});
+
+  publish:
+    name: Publish release image
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.existing.outputs.digest || steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.revision }}
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Authenticate to GitHub Container Registry
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Reuse a published release without overwriting it
+        id: existing
+        env:
+          IMAGE: ${{ needs.validate.outputs.image }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          REVISION: ${{ needs.validate.outputs.revision }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const existing = require('./.github/scripts/release-registry.cjs');
+            const {IMAGE:image,TAG:tag,REVISION:revision,VERSION:version} = process.env;
+            existing({image,tag,revision,version,core});
+      - name: Build and publish the production image
+        if: steps.existing.outputs.exists != 'true'
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: production
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ needs.validate.outputs.image }}:${{ needs.validate.outputs.tag }}
+          build-args: |
+            RELEASE_VERSION=${{ needs.validate.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.validate.outputs.revision }}
+            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
+          annotations: |
+            index:org.opencontainers.image.revision=${{ needs.validate.outputs.revision }}
+            index:org.opencontainers.image.version=${{ needs.validate.outputs.version }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=release-image
+          cache-to: type=gha,mode=max,scope=release-image
+
+  provenance:
+    name: Attest published image
+    needs: [validate, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ needs.validate.outputs.image }}
+          subject-digest: ${{ needs.publish.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+  receipt:
+    name: Attach image reference to release
+    needs: [validate, publish, provenance]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          IMAGE: ${{ needs.validate.outputs.image }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          REVISION: ${{ needs.validate.outputs.revision }}
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        with:
+          script: |
+            const {IMAGE:image, TAG:tag, VERSION:version, REVISION:revision, DIGEST:digest} = process.env;
+            if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error('Missing image digest');
+            const reference = `${image}@${digest}`;
+            const data = Buffer.from(JSON.stringify({image, tag, version, revision, digest, reference, platforms:['linux/amd64','linux/arm64']}, null, 2) + '\n');
+            const release_id = context.payload.release.id;
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {...context.repo, release_id, per_page:100});
+            if (!assets.some(asset => asset.name === 'beacon-image.json')) {
+              await github.rest.repos.uploadReleaseAsset({...context.repo, release_id, name:'beacon-image.json', data, headers:{'content-type':'application/json','content-length':data.length}});
+            }
+            await core.summary.addHeading('Beacon release image')
+              .addRaw(`Release: ${tag}\n\n`).addCodeBlock(reference)
+              .addRaw('Use this exact image digest for both preview and production. No deployment has been performed.\n').write();

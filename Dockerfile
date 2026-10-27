@@ -12,6 +12,7 @@ RUN mkdir -p /data/media && chown node:node /app /data /data/media /app/apps/web
 USER node
 
 FROM base AS production
-RUN pnpm build
+ARG RELEASE_VERSION=""
+RUN BEACON_RELEASE_VERSION="$RELEASE_VERSION" pnpm build
 ENV NODE_ENV=production
 CMD ["pnpm", "start"]
