@@ -37,8 +37,9 @@ try {
   });
   await cdp.send("ServiceWorker.enable");
   await page.goto(base,{waitUntil:"domcontentloaded"});
-  await page.locator(".nav-rail").getByRole("button",{name:"Профиль",exact:true}).click();
-  await expect(page.getByRole("heading",{name:"Push-уведомления",exact:true})).toBeVisible();
+  await page.locator(".nav-rail").getByRole("button",{name:"Настройки",exact:true}).click();
+  await page.getByRole("navigation",{name:"Разделы настроек"}).getByRole("button",{name:"Push-уведомления",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Push-уведомления",exact:true,level:2})).toBeVisible();
   const saved=page.waitForResponse(r=>new URL(r.url()).pathname==="/api/push/subscriptions"&&r.request().method()==="POST");
   void saved.catch(()=>{});
   await page.getByRole("button",{name:"Включить уведомления",exact:true}).click();

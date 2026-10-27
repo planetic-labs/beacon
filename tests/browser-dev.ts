@@ -17,8 +17,8 @@ try {
     });
   });
   await page.route("**/socket.io/**", route => route.abort());
-  await page.goto(`${base}/profile`);
-  await expect(page.getByRole("heading", { name: "Push-уведомления", exact: true })).toBeVisible();
+  await page.goto(`${base}/settings/notifications`);
+  await expect(page.getByRole("heading", { name: "Push-уведомления", exact: true, level: 2 })).toBeVisible();
   await expect.poll(() => connected, { timeout: 15000 }).toBe(true);
   const source = await context.request.get(`${base}/src/main.tsx`);
   expect(source.status()).toBe(200);

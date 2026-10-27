@@ -16,7 +16,12 @@ const app = createRoute({ getParentRoute: () => root, id: "app", component: Beac
 const index = createRoute({ getParentRoute: () => app, path: "/" });
 const chat = createRoute({ getParentRoute: () => app, path: "/chats/$chatId" });
 const people = createRoute({ getParentRoute: () => app, path: "/people", beforeLoad: () => { throw redirect({ to: "/", replace: true }); } });
-const profile = createRoute({ getParentRoute: () => app, path: "/profile" });
+const profile = createRoute({ getParentRoute: () => app, path: "/profile", beforeLoad: () => { throw redirect({ to: "/settings/profile", replace: true }); } });
+const settings = createRoute({ getParentRoute: () => app, path: "/settings" });
+const settingsProfile = createRoute({ getParentRoute: () => app, path: "/settings/profile" });
+const settingsSecurity = createRoute({ getParentRoute: () => app, path: "/settings/security" });
+const settingsNotifications = createRoute({ getParentRoute: () => app, path: "/settings/notifications" });
+const settingsAbout = createRoute({ getParentRoute: () => app, path: "/settings/about" });
 const admin = createRoute({ getParentRoute: () => app, path: "/admin" });
 const adminStickers = createRoute({ getParentRoute: () => app, path: "/admin/stickers" });
 const adminUsers = createRoute({ getParentRoute: () => app, path: "/admin/users" });
@@ -24,7 +29,7 @@ const adminGroups = createRoute({ getParentRoute: () => app, path: "/admin/group
 const adminChats = createRoute({ getParentRoute: () => app, path: "/admin/chats" });
 const consent = createRoute({ getParentRoute: () => root, path: "/consent", component: Consent });
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([index, chat, people, profile, admin, adminStickers, adminUsers, adminGroups, adminChats]), consent]),
+  routeTree: root.addChildren([app.addChildren([index, chat, people, profile, settings, settingsProfile, settingsSecurity, settingsNotifications, settingsAbout, admin, adminStickers, adminUsers, adminGroups, adminChats]), consent]),
   defaultPreload: "intent",
 });
 declare module "@tanstack/react-router" {

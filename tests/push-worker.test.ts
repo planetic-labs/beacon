@@ -10,7 +10,8 @@ test("push endpoints cannot address private services or unrelated hosts",()=>{
   const keys={p256dh:ecdh.getPublicKey().toString("base64url"),auth:randomBytes(16).toString("base64url")};
   for(const host of ["fcm.googleapis.com","web.push.apple.com","updates.push.services.mozilla.com","wns2.notify.windows.com"])
     assert.ok(subscriptionInput.safeParse({endpoint:`https://${host}/test`,keys}).success);
-  for(const endpoint of ["https://localhost/test","https://127.0.0.1/test","http://fcm.googleapis.com/test","https://fcm.googleapis.com.attacker.example/test","https://user:password@fcm.googleapis.com/test","https://fcm.googleapis.com:8443/test"])
+  const credentialed=new URL("https://fcm.googleapis.com/test");credentialed.username="test-user";credentialed.password="test-only";
+  for(const endpoint of ["https://localhost/test","https://127.0.0.1/test","http://fcm.googleapis.com/test","https://fcm.googleapis.com.attacker.example/test",credentialed.href,"https://fcm.googleapis.com:8443/test"])
     assert.equal(subscriptionInput.safeParse({endpoint,keys}).success,false);
   assert.equal(subscriptionInput.safeParse({endpoint:"https://fcm.googleapis.com/test",keys:{...keys,p256dh:"A".repeat(87)}}).success,false);
 });
@@ -37,6 +38,11 @@ test("service worker displays only freshly authorized messages and opens their c
   assert.equal(requests,2);
   await dispatch("notificationclick",{notification:{data:{chatId},close:()=>{}}});
   assert.equal(opened[0].type,"beacon:open-chat");assert.equal(opened[0].chatId,chatId);
+  for(const path of ["/settings","/settings/profile","/settings/security","/settings/notifications","/settings/about"]){
+    client.url=`https://beacon.example.com${path}`;
+    await dispatch("notificationclick",{notification:{data:{chatId},close:()=>{}}});
+    assert.equal(opened.at(-1).type,"beacon:open-chat","reuse an existing settings window");
+  }
   let intercepted=false;
   handlers.fetch({request:{method:"GET",url:"https://beacon.example.com/api/v1/chats",mode:"cors"},respondWith:()=>{intercepted=true}});
   assert.equal(intercepted,false,"private APIs must never enter the offline cache");

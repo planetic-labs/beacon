@@ -74,8 +74,11 @@ try {
   await expect(a).toHaveURL(new RegExp(`/chats/${fixtures.chatId}$`));
   await a.reload();
   await expect(a.locator(".chat-header-title")).toHaveText("Чат для технических моментов");
-  await a.locator(".nav-rail").getByRole("button", { name: "Профиль", exact: true }).click();
-  await expect(a).toHaveURL(/\/profile$/);
+  await a.locator(".nav-rail").getByRole("button", { name: "Настройки", exact: true }).click();
+  await expect(a).toHaveURL(/\/settings$/);
+  await a.getByRole("navigation",{name:"Разделы настроек"}).getByRole("button",{name:"Профиль",exact:true}).click();
+  await expect(a).toHaveURL(/\/settings\/profile$/);
+  await a.goBack();
   await a.goBack();
   await expect(a.locator(".chat-header-title")).toHaveText("Чат для технических моментов");
   await expect(a.locator(".bubble-text").first()).toContainText(
@@ -139,7 +142,8 @@ try {
   await a.screenshot({ path: "/run/test/mobile-list.png" });
   await a.setViewportSize({ width: 1440, height: 900 });
   await expect(a.locator(".app")).toHaveAttribute("data-device","desktop");
-  await a.locator(".nav-rail").getByRole("button", { name: "Профиль", exact: true }).click();
+  await a.locator(".nav-rail").getByRole("button", { name: "Настройки", exact: true }).click();
+  await a.getByRole("navigation",{name:"Разделы настроек"}).getByRole("button",{name:"Ключи доступа",exact:true}).click();
   const cdp = await contexts[0].newCDPSession(a);
   await cdp.send("WebAuthn.enable");
   await cdp.send("WebAuthn.addVirtualAuthenticator", {
