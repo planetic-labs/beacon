@@ -13,6 +13,7 @@ function run({tags=[],releases=[],scenario="",args=[]}:{tags?:string[];releases?
   writeFileSync(join(root,"gh"),`#!/usr/bin/env node
 const fs=require('node:fs');const a=process.argv.slice(2),s=process.env.FAKE_SCENARIO,p=a.find(v=>v.startsWith('repos/'))||'';
 fs.appendFileSync(process.env.FAKE_LOG,JSON.stringify(a)+'\\n');
+if(a.includes('--slurp')){console.error('unknown flag: --slurp');process.exit(2);}
 if(a[0]==='repo'){console.log('example/beacon');process.exit(0);}
 if(a[0]==='release'){
  if(s==='publish-failure')process.exit(1);
@@ -20,7 +21,14 @@ if(a[0]==='release'){
 }
 if(p.endsWith('/branches/main'))console.log('${sha}');
 else if(p.endsWith('/checks.yml/runs'))console.log(s==='ci-pending'?'':'${sha}');
-else if(p.includes('/check-runs?'))console.log(s==='codeql-failure'?'1':'2');
+else if(p.includes('/check-runs?')){
+ if(!a.includes('--paginate'))process.exit(4);
+ console.log('Analyze (actions)\\t10\\tcompleted\\tsuccess');
+ console.log('Analyze (javascript-typescript)\\t20\\tcompleted\\t'+(s==='codeql-failure'?'failure':'success'));
+ if(s==='newer-check-failed')console.log('Analyze (actions)\\t30\\tcompleted\\tfailure');
+ if(s==='older-check-failed')console.log('Analyze (actions)\\t5\\tcompleted\\tfailure');
+ if(s==='later-page-failed')process.exit(1);
+}
 else if(p.includes('/tags?')){
  if(!a.includes('--paginate'))process.exit(4);
  console.log(process.env.FAKE_TAGS);
@@ -67,4 +75,11 @@ test("concurrent tag reservations retry, but network and permission failures sto
 });
 test("failed publication leaves the reserved tag intact and reports recovery",()=>{
  const r=run({scenario:"publish-failure"});assert.notEqual(r.status,0);assert.match(r.stderr,/tag was kept/);assert.equal(r.calls.some(call=>call.includes("DELETE")),false);
+});
+
+test("all CodeQL pages are checked and the newest result wins without --slurp",()=>{
+ const old=run({scenario:"older-check-failed",args:["--dry-run"]});assert.equal(old.status,0,old.stderr);
+ for(const scenario of ["newer-check-failed","later-page-failed"]){
+  const r=run({scenario});assert.notEqual(r.status,0);assert.equal(published(r.calls).length,0);assert.equal(r.calls.some(call=>call.includes("POST")),false);
+ }
 });
