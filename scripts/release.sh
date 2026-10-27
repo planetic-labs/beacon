@@ -28,8 +28,21 @@ if [ "$checked" != "$revision" ]; then
   printf 'Main has not passed CI yet. Wait for successful checks, then repeat this command.\n' >&2
   exit 1
 fi
-analyses=$(gh api --paginate --slurp "repos/$repo/commits/$revision/check-runs?per_page=100" \
-  --jq '[.[].check_runs[] | select(.app.slug == "github-actions")] | group_by(.name) | map(max_by(.id)) | map(select((.name == "Analyze (actions)" or .name == "Analyze (javascript-typescript)") and .status == "completed" and .conclusion == "success")) | length')
+runtime=$(mktemp -d)
+trap 'rm -rf "$runtime"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+# Older gh versions support paginated per-page projection, but not --slurp.
+# Save every page before processing, so a later API failure cannot look like
+# a successful partial list. Keep the newest run for each trusted check name.
+gh api --paginate "repos/$repo/commits/$revision/check-runs?per_page=100" \
+  --jq '.check_runs[] | select(.app.slug == "github-actions") | select(.name == "Analyze (actions)" or .name == "Analyze (javascript-typescript)") | [.name, (.id | tostring), .status, .conclusion] | @tsv' > "$runtime/checks"
+analyses=$(awk -F '\t' '
+  $2+0 > newest[$1] { newest[$1]=$2+0; state[$1]=$3; result[$1]=$4 }
+  END {
+    for (name in newest) if (state[name]=="completed" && result[name]=="success") count++
+    print count+0
+  }' "$runtime/checks")
 if [ "$analyses" != 2 ]; then
   printf 'Both CodeQL analyses for main must pass before releasing. Repeat after they finish.\n' >&2
   exit 1
@@ -37,10 +50,6 @@ fi
 
 day=$(TZ=Europe/Moscow date +%Y.%m.%d)
 prefix="v$day"
-runtime=$(mktemp -d)
-trap 'rm -rf "$runtime"' EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
 attempt=0
 while [ "$attempt" -lt 5 ]; do
   attempt=$((attempt + 1))
