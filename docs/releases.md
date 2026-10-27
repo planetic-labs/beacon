@@ -10,12 +10,15 @@ publish images or update any server.
 1. Merge the desired changes into `main` and wait for that commit's CI and both
    CodeQL analyses to succeed. The release workflow checks that exact commit,
    not an older successful run or only the checks from its pull request.
-2. Create a GitHub release from that commit with a new tag such as `v1.2.3`.
-   Pre-release tags such as `v1.2.3-rc.1` are also supported. Build metadata
-   (`+...`) is not accepted in tags. Publish the release.
+2. Create a GitHub release from that commit using its date in Europe/Moscow:
+   `v2026.10.27` for the first release that day, then `v2026.10.27-patch1`,
+   `v2026.10.27-patch2` and so on. Month and day always use two digits; patch
+   numbers start at 1 without leading zeros. Publish it as a normal release.
+   The workflow validates real calendar dates but does not require today's
+   date, so repeat runs and releases for earlier dates remain possible.
 3. Open Actions → Release image. The workflow builds the Dockerfile's
    `production` target for Linux AMD64 and ARM64 and pushes one multi-platform
-   image to `ghcr.io/<repository-owner>/<repository-name>:v1.2.3`.
+   image to `ghcr.io/<repository-owner>/<repository-name>:v2026.10.27`.
 4. After publication and provenance signing succeed, `beacon-image.json` is
    attached to the release. It records the version, source commit and immutable
    image reference (`ghcr.io/...@sha256:...`). The workflow summary also shows

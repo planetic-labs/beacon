@@ -5,8 +5,10 @@ module.exports = async function releaseImage({ github, context, core, revision }
   if (context.eventName !== "release" || context.payload.action !== "published" || !release || release.draft)
     throw new Error("Images are published only for published GitHub releases.");
   const tag = release.tag_name;
-  if (typeof tag !== "string" || tag.length > 128 || !/^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(tag))
-    throw new Error("Use a release tag such as v1.2.3 or v1.2.3-rc.1 (without build metadata).");
+  const date = typeof tag === "string" && /^v([1-9]\d{3})\.(0[1-9]|1[0-2])\.(0[1-9]|[12]\d|3[01])(?:-patch[1-9]\d*)?$/.exec(tag);
+  const parsed = date && new Date(`${date[1]}-${date[2]}-${date[3]}T00:00:00Z`);
+  if (!date || date[0] !== tag || tag.length > 128 || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== `${date[1]}-${date[2]}-${date[3]}`)
+    throw new Error("Use a valid calendar release tag such as v2026.10.27 or v2026.10.27-patch1.");
   if (!/^[0-9a-f]{40}$/.test(revision)) throw new Error("Invalid checked-out commit.");
   const repo = context.repo;
   const { data: tagged } = await github.rest.repos.getCommit({ ...repo, ref: `tags/${tag}` });
