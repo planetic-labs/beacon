@@ -80,6 +80,10 @@ try {
   await context.setOffline(true);
   await page.reload();
   await expect(page.locator("#email")).toBeVisible();
+  await page.goto(`${base}/settings/profile`);
+  await expect(page.locator("#email")).toBeVisible();
+  await page.goto(`${base}/chats/${chatId}`);
+  await expect(page.locator("#email")).toBeVisible();
   const protectedPaths = ["/api/v1/me", "/api/auth/get-session", "/media/private.png", "/.well-known/openid-configuration"];
   for (const path of protectedPaths) {
     const ok = await page.evaluate(async path => { try { await fetch(path); return true; } catch { return false; } }, path);

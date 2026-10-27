@@ -1,3 +1,4 @@
+import { About } from "./about";
 import { EmojiMenu } from "./emoji-menu";
 import { useDraftSync } from "./drafts";
 import { PhotoViewer, type PhotoTarget } from "./photo-viewer";
@@ -61,15 +62,29 @@ export function Beacon(): ReactNode {
   const navigate = useNavigate();
   const pathname = useLocation({ select: location => location.pathname });
   const legacyChat = useSearch({ strict: false }).chat;
-  const section = pathname === "/profile" ? "profile" : pathname === "/admin" || pathname.startsWith("/admin/") ? "admin" : "chats";
+  const section = (pathname === "/settings" || pathname.startsWith("/settings/")) ? "profile" : pathname === "/admin" || pathname.startsWith("/admin/") ? "admin" : "chats";
   const adminSections = [
     { path: "/admin/users", title: "Пользователи", icon: "profile" },
     { path: "/admin/stickers", title: "Стикеры", icon: "sticker" },
     { path: "/admin/groups", title: "Группы пользователей", icon: "users" },
     { path: "/admin/chats", title: "Групповые чаты", icon: "chats" },
   ] as const;
+  const systemGroups = [
+    {role:"admin",name:"Администраторы",description:"Управление пользователями, группами и остальными разделами администрирования."},
+    {role:"user",name:"Пользователи",description:"Обычный доступ к чатам и сервисам без административных функций."},
+  ] as const;
+  const settingsSections = [
+    {path:"/settings/profile",title:"Профиль",icon:"profile"},
+    {path:"/settings/security",title:"Ключи доступа",icon:"key"},
+    {path:"/settings/notifications",title:"Push-уведомления",icon:"bell"},
+    {path:"/settings/about",title:"О приложении",icon:"info"},
+  ] as const;
+  const settingsPage=settingsSections.find(item=>item.path===pathname)??settingsSections[0];
+  const sectionItems=section==="profile"?settingsSections:adminSections;
+  const activeSectionPage=section==="profile"?settingsPage:adminSections.find(item=>item.path===pathname)??adminSections[0];
+  const sectionTitle=section==="profile"?"Настройки":"Администрирование";
   const adminPage = adminSections.find(item => item.path === pathname) ?? adminSections[0];
-  const sectionRoutes = { chats: "/", admin: "/admin", profile: "/profile" } as const;
+  const sectionRoutes = { chats: "/", admin: "/admin", profile: "/settings" } as const;
   const setSection = (value: keyof typeof sectionRoutes) => { void navigate({ to: sectionRoutes[value], search: {} }); };
   const closeChat = () => { setSelected(null); selectedRef.current = null; void navigate({ to: "/", search: {} }); };
   const [device, setDevice] = useState("desktop"),
@@ -118,6 +133,7 @@ export function Beacon(): ReactNode {
     [editUser, setEditUser] = useState<User | null>(null),
     [groups, setGroups] = useState<Group[]>([]),
     [editGroup, setEditGroup] = useState<Group | null>(null),
+    [systemRole, setSystemRole] = useState<"admin" | "user" | null>(null),
     [managedChat, setManagedChat] = useState<string | null>(null),
     [details, setDetails] = useState<{ chat: any; members: User[] } | null>(
       null,
@@ -182,6 +198,12 @@ export function Beacon(): ReactNode {
       if (stopPasskeyAutofill.current === stop) stopPasskeyAutofill.current = null;
     };
   }, [loading, me, step, busy, refreshMe]);
+  useEffect(() => {
+    if(pathname!=="/admin/groups"||me?.role!=="admin")return;
+    let active=true;
+    void api<Group[]>("admin/groups").then(value=>{if(active)setGroups(value);}).catch(error=>{if(active)notify(error);});
+    return ()=>{active=false;};
+  },[pathname,me?.role]);
   const refreshLists = useCallback(async () => {
     const [cs, us] = await Promise.all([
       api<Chat[]>("chats"),
@@ -860,10 +882,10 @@ export function Beacon(): ReactNode {
       <button
         className={`rail-action ${section === "profile" ? "active" : ""}`}
         onClick={() => setSection("profile")}
-        aria-label="Профиль"
+        aria-label="Настройки"
       >
         {me.image ? <Avatar name={me.name} image={me.image} extra="rail-profile-avatar" /> : <Icon name="profile" />}
-        <span className="rail-tooltip" aria-hidden="true">Профиль</span>
+        <span className="rail-tooltip" aria-hidden="true">Настройки</span>
       </button>
     </aside>
   );
@@ -905,7 +927,7 @@ export function Beacon(): ReactNode {
                 </div>
                 <button
                   className="profile-avatar-button"
-                  onClick={() => setSection("profile")}
+                  onClick={() => void navigate({to:"/settings/profile",search:{}})}
                   aria-label="Открыть профиль"
                 >
                   <Avatar name={me.name} image={me.image} extra="self-avatar warm" />
@@ -1381,23 +1403,23 @@ export function Beacon(): ReactNode {
               <span />
             )}
             <button onClick={() => setSection("profile")}>
-              <Icon name="users" />
-              <span>Профиль</span>
+              <Icon name="settings" />
+              <span>Настройки</span>
             </button>
           </nav>
         </div>
       ) : (
-        <div className={`admin-shell ${section === "admin" && me.role === "admin" ? "administration-shell" : ""} ${pathname !== "/admin" ? "has-admin-page" : ""}`}>
+        <div className={`admin-shell ${section === "profile" || (section === "admin" && me.role === "admin") ? "administration-shell" : ""} ${!["/admin","/settings"].includes(pathname) ? "has-admin-page" : ""}`}>
           {nav}
-          {section === "admin" && me.role === "admin" && <aside className="admin-sections">
+          {(section === "profile" || (section === "admin" && me.role === "admin")) && <aside className={`admin-sections ${section === "profile" ? "settings-sections" : ""}`}>
             <header className="admin-sections-heading">
               <button type="button" className="icon-button admin-mobile-back" aria-label="Назад к чатам" onClick={() => {setSearchOpen(false);setSection("chats");}}><Icon name="back" /></button>
-              <h1>Администрирование</h1>
+              <h1>{sectionTitle}</h1>
             </header>
-            <nav aria-label="Разделы администрирования">
-              {adminSections.map(item => <button type="button" key={item.path}
-                className={`admin-section-row ${adminPage.path === item.path ? "active" : ""}`}
-                aria-current={adminPage.path === item.path ? "page" : undefined}
+            <nav aria-label={section==="profile"?"Разделы настроек":"Разделы администрирования"}>
+              {sectionItems.map(item => <button type="button" key={item.path}
+                className={`admin-section-row ${activeSectionPage.path === item.path ? "active" : ""}`}
+                aria-current={activeSectionPage.path === item.path ? "page" : undefined}
                 onClick={() => void navigate({ to: item.path, search: {} })}>
                 <Icon name={item.icon} /><span>{item.title}</span>
               </button>)}
@@ -1405,17 +1427,18 @@ export function Beacon(): ReactNode {
           </aside>}
           <main className="settings">
             <header className="admin-header">
-              <button type="button" className={`icon-button ${section === "admin" ? "admin-mobile-back" : ""}`}
-                onClick={() => setSection(section === "admin" ? "admin" : "chats")}
-                aria-label={section === "admin" ? "Назад к разделам" : "Назад к чатам"}><Icon name="back" /></button>
-              <div className="admin-title"><h1>{section === "profile" ? "Профиль" : adminPage.title}</h1></div>
+              <button type="button" className="icon-button admin-mobile-back"
+                onClick={() => setSection(section === "profile" ? "profile" : "admin")}
+                aria-label="Назад к разделам"><Icon name="back" /></button>
+              <div className="admin-title"><h1>{activeSectionPage.title}</h1></div>
             </header>
             <div className="settings-main">
-              {section === "profile" ? (
+              {section === "profile" ? settingsPage.path === "/settings/security" ? <Security email={me.email} notify={notify}/>
+                : settingsPage.path === "/settings/notifications" ? <PushSettings notify={notify}/>
+                : settingsPage.path === "/settings/about" ? <About/>
+                : (
                 <>
                   <Profile me={me} refresh={refreshMe} notify={notify} />
-                  <Security email={me.email} notify={notify} />
-                  <PushSettings notify={notify}/>
                   <button
                     className="secondary-button"
                     onClick={async () => {
@@ -1446,6 +1469,7 @@ export function Beacon(): ReactNode {
                         try {
                           setGroups(await api("admin/groups"));
                           setEditGroup(null);
+                          setSystemRole(null);
                           setModal("membership");
                         } catch (e) {
                           notify(e);
@@ -1454,6 +1478,14 @@ export function Beacon(): ReactNode {
                     >
                       Управление
                     </button>
+                  </div>
+                  <div className="admin-group-list">
+                    {systemGroups.map(group=><button type="button" className="admin-group-item" key={group.role} onClick={()=>{setSystemRole(group.role);setEditGroup(null);setModal("membership");}}>
+                      <strong>{group.name}</strong><span className="field-note">Системная группа · Участников: {users.filter(user=>user.role===group.role).length}</span>
+                    </button>)}
+                    {groups.map(group=><button type="button" className="admin-group-item" key={group.id} onClick={()=>{setSystemRole(null);setEditGroup(group);setModal("membership");}}>
+                      <strong>{group.name}</strong><span className="field-note">Участников: {group.members.length}</span>
+                    </button>)}
                   </div>
                 </div>
               ) : adminPage.path === "/admin/chats" ? (
@@ -1718,20 +1750,28 @@ export function Beacon(): ReactNode {
       {modal === "membership" && (
         <Dialog title="Группы пользователей" close={() => setModal(null)}>
           <div className="inline-actions">
+            {systemGroups.map(group=><button type="button" className="secondary-button" key={group.role} aria-pressed={systemRole===group.role} onClick={()=>{setSystemRole(group.role);setEditGroup(null);}}>{group.name}</button>)}
             {groups.map((g) => (
               <button
                 className="secondary-button"
                 key={g.id}
-                onClick={() => setEditGroup(g)}
+                onClick={() => {setSystemRole(null);setEditGroup(g);}}
               >
                 {g.name}
               </button>
             ))}
-            <button className="text-button" onClick={() => setEditGroup(null)}>
+            <button className="text-button" onClick={() => {setSystemRole(null);setEditGroup(null);}}>
               Новая группа
             </button>
           </div>
-          <MembershipForm
+          {systemRole ? <section aria-label="Системная группа">
+            <h2>{systemGroups.find(group=>group.role===systemRole)?.name}</h2>
+            <p className="field-note">Системная группа</p>
+            <p>{systemGroups.find(group=>group.role===systemRole)?.description}</p>
+            <p>Состав определяется ролью в карточке пользователя. Права системной группы заданы приложением.</p>
+            <div className="people-options">{users.filter(user=>user.role===systemRole).map(user=><div key={user.id}>{user.name}{user.banned?" · Заблокирован":""}</div>)}</div>
+            <button type="button" className="secondary-button" onClick={()=>{setModal(null);void navigate({to:"/admin/users",search:{}});}}>Управление пользователями</button>
+          </section> : <MembershipForm
             key={editGroup?.id ?? "new"}
             group={editGroup}
             users={users}
@@ -1740,7 +1780,7 @@ export function Beacon(): ReactNode {
               setEditGroup(null);
             }}
             notify={notify}
-          />
+          />}
         </Dialog>
       )}
     </div>

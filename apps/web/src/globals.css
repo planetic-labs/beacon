@@ -528,3 +528,40 @@ button:disabled {
   .emoji-dialog { width:100%; max-width:100%; border-radius:20px 20px 0 0; margin:0; padding:12px 10px max(12px, env(safe-area-inset-bottom)); }
   .emoji-menu-body { height:min(430px, 60dvh); }
 }
+
+/* Match the visible send circle to adjacent glyphs while retaining the full tap target. */
+.composer-actions.live .send-button {
+  --send-visible-size: 23px;
+  position: relative;
+  border: 0;
+}
+.composer-actions.live .send-button::before {
+  content: "";
+  position: absolute;
+  width: var(--send-visible-size);
+  height: var(--send-visible-size);
+  border: 1px solid #bfc5d2;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.composer-actions.live .send-mark {
+  position: relative;
+  width: calc(var(--send-visible-size) - 7px);
+}
+@media (max-width: 360px) {
+  .composer-actions.live .send-button { --send-visible-size: 21px; }
+}
+
+.admin-sections.settings-sections { display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; }
+.settings-sections .admin-sections-heading { flex-shrink:0; }
+.settings-sections nav { flex:1; min-height:0; overflow-y:auto; align-content:start; }
+
+.about-details { display:grid; gap:18px; margin:24px 0; }
+.about-details div { display:grid; gap:5px; }
+.about-details dt { color:var(--muted); font-size:14px; }
+.about-details dd { margin:0; overflow-wrap:anywhere; }
+.about-actions { display:flex; flex-wrap:wrap; gap:12px; }
+
+.admin-group-list { display:grid; gap:10px; margin-top:18px; }
+.admin-group-item { display:grid; gap:6px; width:100%; padding:14px; text-align:left; border:1px solid #d5d9e4; border-radius:13px; color:var(--ink); background:white; font:inherit; cursor:pointer; }
+.admin-group-item:hover { background:#f5f6fb; }

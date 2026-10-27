@@ -22,8 +22,8 @@ In production, it serves the Vite build. API and private media never use SPA
 fallback. Vite's file access is restricted to the web app, shared package and
 installed dependencies. The client build has no server environment variables.
 
-TanStack Router owns `/`, `/chats/$chatId`, `/people`, `/profile`, `/admin` and
-`/consent`. The app layout stays mounted during section navigation, retaining
+TanStack Router owns `/`, `/chats/$chatId`, `/people`, `/settings`, `/settings/profile`, `/settings/security`, `/settings/notifications`, `/settings/about`, `/admin` and
+`/consent`. Legacy `/profile` links redirect to `/settings/profile`. Settings reuse the administration three-column shell with a separate section list available to every user; mobile navigation switches between that list and its selected page. The app layout stays mounted during section navigation, retaining
 drafts and the socket connection. Existing `/?chat=...` notification links remain
 supported. OAuth login query parameters are preserved until authentication.
 Existing UI styling and markup are carried over from the supplied design.
@@ -140,3 +140,10 @@ Drafts also belong to membership and contain text plus structured mentions, neve
 ## Emoji composer picker
 
 The composer opens a standalone emoji-picker-react panel, with Russian search/data, categories, skin tones and account-scoped local recent selections. Desktop uses a floating panel and mobile a bottom sheet. Emoji selection inserts standard Unicode at the saved textarea selection, replacing selected text and retaining the insertion position for consecutive picks; it never submits the message. The existing mention-offset and draft logic handles the edit. The picker and its bundled dataset load on opening; native glyphs avoid external image/CDN requests. Import failures have a local retry state. The existing dialog handles focus and dismissal, with Escape captured before the picker consumes it. No server or database changes are required.
+
+
+Settings keep profile editing, passkey management, push preferences and application information on separate routes. The last settings item, About, shows the root package version injected by Vite, the production shell build identifier, build time and mode. Development shows its frontend startup time. Users can copy these public details and check the existing service-worker registration for updates; activation continues through the draft-safe update banner.
+
+Passkey registration preserves Better Auth's fresh-session requirement. An explicit `SESSION_NOT_FRESH` response opens email confirmation for the current account. The standard sign-in OTP endpoint creates a fresh session without a manual sign-out. A separate Continue button starts WebAuthn after confirmation to retain a user gesture; cancellation leaves the app open. Other authorization failures do not trigger this flow. Registration options use native fetch for Safari compatibility; verification remains on the authentication library's server endpoints.
+
+The administration group list includes the built-in Administrator and User roles alongside additional membership groups. System groups derive their members from user roles, explain their fixed privileges and link to user management for role assignment. They are not editable membership-group records and do not change integration group claims.

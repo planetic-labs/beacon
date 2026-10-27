@@ -12,6 +12,8 @@ import {
   CheckSquare,
   Heart,
   House,
+  KeyRound,
+  Info,
   ImagePlus,
   Sticker,
   Library,
@@ -30,6 +32,8 @@ import {
 } from "lucide-react";
 
 const icons = {
+  key: KeyRound,
+  info: Info,
   download: Download,
   bookmark: Bookmark,
   pin: Pin,

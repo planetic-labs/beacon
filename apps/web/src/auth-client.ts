@@ -1,4 +1,5 @@
-import { startAuthentication, WebAuthnAbortService } from "@simplewebauthn/browser";
+import { passkeyRegistrationError } from "./lib/passkey-error";
+import { startRegistration, startAuthentication, WebAuthnAbortService } from "@simplewebauthn/browser";
 import { beginConditionalPasskey } from "./lib/conditional-passkey";
 import { createAuthClient } from "better-auth/react";
 import { emailOTPClient } from "better-auth/client/plugins";
@@ -33,4 +34,24 @@ export function beginPasskeyAutofill(signedIn: () => Promise<void>) {
     },
     cancel: () => WebAuthnAbortService.cancelCeremony(),
   }, signedIn);
+}
+
+// Safari must retain the button's user gesture through the options request.
+// Keep a native fetch before WebAuthn instead of the auth client's fetch wrapper.
+export async function registerPasskey(name: string) {
+  try {
+    const response = await fetch("/api/auth/passkey/generate-register-options", {
+      credentials: "same-origin", cache: "no-store",
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw { status: response.status, code: body?.code };
+    }
+    const optionsJSON: Parameters<typeof startRegistration>[0]["optionsJSON"] = await response.json();
+    const { clientExtensionResults: _, ...credential } = await startRegistration({ optionsJSON });
+    const result = await authClient.$fetch("/passkey/verify-registration", {
+      method: "POST", body: { response: credential, name },
+    });
+    if (result.error) throw result.error;
+  } catch (error) { throw passkeyRegistrationError(error); }
 }

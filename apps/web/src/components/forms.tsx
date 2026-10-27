@@ -1,6 +1,8 @@
+import { FreshSessionRequiredError } from "../lib/passkey-error";
+import { PasskeyConfirmation } from "./passkey-confirmation";
 import { suggestPasskeyLabel } from "../lib/passkey-label";
 import { useState, useEffect } from "react";
-import { authClient } from "@/auth-client";
+import { authClient, registerPasskey } from "@/auth-client";
 import type { User, Group } from "@beacon/shared";
 import { api, Avatar, Field, AvatarPicker } from "./ui";
 export function Profile({
@@ -97,6 +99,7 @@ export function Security({ email, notify }: { email: string | undefined; notify:
   const [editing, setEditing] = useState<string | null>(null);
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   async function refresh() {
     const r = await authClient.passkey.listUserPasskeys();
     if (r.error) throw new Error("Не удалось загрузить ключи");
@@ -167,18 +170,17 @@ export function Security({ email, notify }: { email: string | undefined; notify:
           setBusy(true);
           try {
             if (!email) throw new Error("Не удалось определить email аккаунта");
-            const r = await authClient.passkey.addPasskey({
-              name: suggestPasskeyLabel(navigator),
-            });
-            if (r.error) throw new Error("Не удалось добавить ключ");
+            await registerPasskey(suggestPasskeyLabel(navigator));
             await refresh();
           } catch (e) {
-            notify(e);
+            if (e instanceof FreshSessionRequiredError) setConfirming(true);
+            else notify(e);
           } finally { setBusy(false); }
         }}
       >
         Добавить ключ доступа
       </button>
+      {confirming && email && <PasskeyConfirmation email={email} close={() => setConfirming(false)} done={async () => { setConfirming(false); await refresh(); }} />}
     </section>
   );
 }
