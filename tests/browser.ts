@@ -182,6 +182,7 @@ try {
       return get(options);
     };
   })()`);
+  await a.getByRole("navigation", { name: "Разделы настроек" }).getByRole("button", { name: "Профиль", exact: true }).click();
   await a.getByRole("button", { name: "Выйти из аккаунта" }).click();
   await expect(a.locator("html")).toHaveAttribute("data-conditional-passkey", "requested");
   await expect(
