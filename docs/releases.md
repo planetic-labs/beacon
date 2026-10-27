@@ -5,7 +5,25 @@ GitHub release is the only trigger for building a distributable Beacon image.
 Ordinary commits, pull requests, draft releases and release-note edits do not
 publish images or update any server.
 
-## Publish a version
+## Create a release with one command
+
+From the repository directory, run `./scripts/release.sh`. It runs directly on
+this machine, without Docker: this is a GitHub administration command, not an
+application build. Install GitHub CLI (`gh`) and sign in with `gh auth login`.
+The command resolves the repository from Git, checks the exact remote `main`
+commit's CI and CodeQL results, and chooses today's version in Europe/Moscow.
+It checks all pages of tags and releases, including standalone tags and drafts,
+then uses the highest patch number plus one. It reserves the tag atomically,
+pins it to the checked commit and publishes generated release notes. Local
+uncommitted changes and the current local branch are not included in the release.
+
+Use `./scripts/release.sh --dry-run` to see the chosen version without writing to
+GitHub. Each normal run intentionally creates a new release. An occupied tag
+is retried with the next patch; authentication, network or check failures stop
+the command. If publication fails after tag reservation, the tag is kept for
+inspection instead of being deleted automatically. No application is deployed.
+
+## Publish a version manually
 
 1. Merge the desired changes into `main` and wait for that commit's CI and both
    CodeQL analyses to succeed. The release workflow checks that exact commit,
