@@ -1,0 +1,82 @@
+/* Storage Space's sidebar, toolbar and file-table layout, scoped to Beacon. */
+.storage-shell { display: grid; grid-template-columns: 48px 268px minmax(0, 1fr); height: 100%; min-height: 0; }
+.ss-sidebar { background: #fff; border-right: 1px solid var(--line); padding: 25px 15px; display: flex; flex-direction: column; gap: 25px; min-height: 0; overflow-y: auto; }
+.ss-brand { display: flex; align-items: center; gap: 10px; padding: 0 12px; font-weight: 760; font-size: 20px; letter-spacing: -.5px; }
+.ss-brand-mark { width: 30px; height: 30px; border-radius: 9px; background: var(--navy-950); color: white; display: grid; place-items: center; }
+.ss-side-label { color: #8b94a5; text-transform: uppercase; letter-spacing: .11em; font-size: 11px; font-weight: 760; padding: 0 14px; margin: 0 0 9px; }
+.ss-nav-list { display: grid; gap: 4px; }
+.ss-nav, .ss-storage { border: 0; background: transparent; color: #546075; width: 100%; display: flex; align-items: center; gap: 11px; text-align: left; border-radius: 10px; padding: 10px 13px; font-size: 14px; font-weight: 600; }
+.ss-nav:hover, .ss-storage:hover { background: #f3f5fb; }
+.ss-nav.active, .ss-storage.active { background: #eef0fb; color: var(--navy-950); }
+.ss-nav svg, .ss-storage svg { flex: none; }
+.ss-storage { align-items: flex-start; }
+.ss-storage > svg { margin-top: 2px; }
+.ss-storage-info { min-width: 0; flex: 1; }
+.ss-storage-name { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ss-storage-sub { display: block; color: #9aa3b3; font-size: 12px; font-weight: 500; margin-top: 2px; white-space: nowrap; }
+.ss-main { min-width: 0; overflow-y: auto; padding: 24px 32px 32px; background: #f5f6fa; color: var(--ink); }
+.ss-workspace { max-width: 1480px; margin: auto; }
+.ss-topbar { display: flex; align-items: center; gap: 16px; margin-bottom: 30px; }
+.ss-search { position: relative; max-width: 440px; min-width: 0; flex: 1; }
+.ss-search input { height: 42px; width: 100%; background: #fff; border: 1px solid var(--line); border-radius: 11px; padding: 0 42px; color: #263247; font-size: 14px; }
+.ss-search input::placeholder { color: #9ba5b5; }
+.ss-search svg { position: absolute; left: 14px; top: 12px; color: #98a3b6; }
+.ss-top-actions { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+.ss-icon-button, .ss-soft-button, .ss-primary-button { border: 1px solid var(--line); border-radius: 10px; height: 40px; background: #fff; color: #49566d; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; font-weight: 650; padding: 0 13px; white-space: nowrap; }
+.ss-icon-button { width: 40px; padding: 0; flex-shrink: 0; }
+.ss-primary-button { background: var(--navy-950); border-color: var(--navy-950); color: white; }
+.ss-primary-button:disabled, .ss-soft-button:disabled { opacity: .55; }
+.ss-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+.ss-heading h1 { margin: 0; font-size: 29px; letter-spacing: -1.1px; line-height: 1.15; }
+.ss-headline-actions { display: flex; gap: 9px; }
+.ss-body-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+.ss-card { background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 8px 30px #19283d06; }
+.ss-files-card { min-width: 0; overflow: hidden; }
+.ss-table-head { display: grid; grid-template-columns: minmax(160px, 1fr) 120px 105px 40px; align-items: center; gap: 14px; padding: 0 20px; height: 38px; border-bottom: 1px solid #eef0f4; color: #9aa4b2; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; font-weight: 750; }
+.ss-empty { min-height: 330px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px 18px; text-align: center; color: #9aa3b3; }
+.ss-empty h2 { font-size: 17px; color: #546075; margin: 18px 0 8px; }
+.ss-empty p { font-size: 13px; margin: 0; }
+.ss-mobile-back, .ss-menu-toggle, .ss-menu-close, .ss-backdrop { display: none; }
+@media (max-width: 1000px) and (min-width: 781px) {
+  .storage-shell { grid-template-columns: 48px 240px minmax(0, 1fr); }
+  .ss-main { padding: 24px 20px; }
+  .ss-table-head { grid-template-columns: minmax(100px, 1fr) 90px 70px 20px; gap: 8px; }
+}
+@media (max-width: 780px) {
+  .storage-shell { display: block; }
+  .ss-main { height: 100%; padding: 16px 12px max(20px, env(safe-area-inset-bottom)); }
+  .ss-sidebar { display: none; }
+  .ss-sidebar.open { display: flex; position: fixed; top: 0; bottom: 0; left: 0; width: min(280px, calc(100vw - 36px)); z-index: 31; box-shadow: 12px 0 40px #0002; }
+  .ss-backdrop { display: block; position: fixed; inset: 0; border: 0; background: #171d3455; z-index: 30; }
+  .ss-mobile-back, .ss-menu-toggle, .ss-menu-close { display: inline-flex; }
+  .ss-menu-close { margin-left: auto; }
+  .ss-topbar { flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+  .ss-search { order: 2; flex: 1 0 100%; max-width: none; }
+  .ss-heading { gap: 10px; }
+  .ss-heading h1 { font-size: 24px; }
+  .ss-table-head { grid-template-columns: minmax(0, 1fr) 80px 60px; padding: 0 12px; gap: 6px; }
+  .ss-table-head span:last-child { display: none; }
+  .ss-empty { min-height: 300px; }
+}
+
+/* Column headers use the same full-width divider as other Beacon sections. */
+.ss-brand {
+  min-height: 78px;
+  margin: -25px -15px 0;
+  padding: 14px 27px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.ss-topbar {
+  min-height: 78px;
+  margin: -24px -32px 30px;
+  padding: 14px 32px;
+  border-bottom: 1px solid var(--line);
+}
+@media (max-width: 1000px) and (min-width: 781px) {
+  .ss-topbar { margin-inline: -20px; padding-inline: 20px; }
+}
+@media (max-width: 780px) {
+  .ss-brand { min-height: 62px; }
+  .ss-topbar { margin: -16px -12px 24px; padding: 16px 12px; }
+}

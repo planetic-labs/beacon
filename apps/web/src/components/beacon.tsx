@@ -1,3 +1,5 @@
+import { Materials } from "./materials";
+import { Storage } from "./storage";
 import { ComposerFrame, createComposerState } from "./composer-state";
 import { DeviceData } from "./device-data";
 import { useOfflineSync } from "./offline-sync";
@@ -73,7 +75,7 @@ export function Beacon(): ReactNode {
   const navigate = useNavigate();
   const pathname = useLocation({ select: location => location.pathname });
   const legacyChat = useSearch({ strict: false }).chat;
-  const section = (pathname === "/settings" || pathname.startsWith("/settings/")) ? "profile" : pathname === "/admin" || pathname.startsWith("/admin/") ? "admin" : "chats";
+  const section = (pathname === "/settings" || pathname.startsWith("/settings/")) ? "profile" : pathname === "/admin" || pathname.startsWith("/admin/") ? "admin" : pathname === "/storage" ? "storage" : pathname === "/materials" ? "materials" : "chats";
   const adminSections = [
     { path: "/admin/users", title: "Пользователи", icon: "profile" },
     { path: "/admin/stickers", title: "Стикеры", icon: "sticker" },
@@ -97,7 +99,7 @@ export function Beacon(): ReactNode {
   const activeSectionPage=section==="profile"?settingsPage:adminSections.find(item=>item.path===pathname)??adminSections[0];
   const sectionTitle=section==="profile"?"Настройки":"Администрирование";
   const adminPage = adminSections.find(item => item.path === pathname) ?? adminSections[0];
-  const sectionRoutes = { chats: "/", admin: "/admin", profile: "/settings" } as const;
+  const sectionRoutes = { chats: "/", admin: "/admin", profile: "/settings", storage: "/storage", materials: "/materials" } as const;
   const setSection = (value: keyof typeof sectionRoutes) => { draftSync.current.flush(); void navigate({ to: sectionRoutes[value], search: {} }); };
   const closeChat = () => { draftSync.current.flush(); setSelected(null); selectedRef.current = null; void navigate({ to: "/", search: {} }); };
   const [device, setDevice] = useState("desktop"),
@@ -956,10 +958,10 @@ export function Beacon(): ReactNode {
       ] as const).map(([icon, label]) => (
         <button
           key={icon}
-          className="rail-action"
+          className={`rail-action ${(icon === "storage" && section === "storage") || (icon === "materials" && section === "materials") ? "active" : ""}`}
           aria-label={label}
-          aria-haspopup={icon === "search" ? undefined : "dialog"}
-          onClick={() => icon === "search" ? beginSearch() : setUpcomingService(label)}
+          aria-haspopup={icon === "search" || icon === "storage" || icon === "materials" ? undefined : "dialog"}
+          onClick={() => icon === "search" ? beginSearch() : icon === "storage" ? setSection("storage") : icon === "materials" ? setSection("materials") : setUpcomingService(label)}
         >
           <Icon name={icon} />
           <span className="rail-tooltip" aria-hidden="true">{label}</span>
@@ -1010,7 +1012,7 @@ export function Beacon(): ReactNode {
   return (
     <div className="app" data-device={device}>
       {toast}
-      {section === "chats" ? (
+      {section === "materials" ? <div className="materials-shell">{nav}<Materials back={() => setSection("chats")} /></div> : section === "storage" ? <div className="storage-shell">{nav}<Storage back={() => setSection("chats")} /></div> : section === "chats" ? (
         <div className={`chat-shell ${selected ? "has-chat" : ""}`}>
           {nav}
           {searchOpen ? <SearchPanel key={searchScope?.id??"global"} revision={searchRevision} scope={searchScope} users={users} chats={chats} openChat={openChat} openPerson={id=>void startDirectChat(id)} openMessage={hit=>void openSearchMessage(hit)} close={()=>setSearchOpen(false)}/> : <section className="chat-list">
@@ -1488,19 +1490,19 @@ export function Beacon(): ReactNode {
               </div>
             )}
           </section>
-          <nav className="mobile-bottom" aria-label="Навигация">
+          <nav className="mobile-bottom" aria-label="Навигация" style={{gridTemplateColumns:`repeat(${me.role === "admin" ? 5 : 4}, minmax(0, 1fr))`}}>
             <button className="active" onClick={()=>setSearchOpen(false)}>
               <Icon name="chats" />
               <span>Чаты</span>
             </button>
+            <button onClick={() => setSection("materials")}><Icon name="materials" /><span>Материалы</span></button>
+            <button onClick={() => setSection("storage")}><Icon name="storage" /><span>Хранилище</span></button>
             {me.role === "admin" ? (
               <button onClick={() => setSection("admin")}>
                 <Icon name="settings" />
                 <span>Администрирование</span>
               </button>
-            ) : (
-              <span />
-            )}
+            ) : null}
             <button onClick={() => setSection("profile")}>
               <Icon name="settings" />
               <span>Настройки</span>
