@@ -34,7 +34,7 @@ export function useChatFeatures(userId: string | undefined, selected: string | n
     };
     const sync=()=>{void loadReceipts().catch(()=>{});};
     s.on("receipt.changed",changed);s.on("chat.changed",changed);s.on("chat.activity",receive);s.on("connect",sync);s.on("sync",sync);
-    const timer=setInterval(()=>setActivities(items=>items.filter(a=>a.expiresAt>Date.now())),1000);
+    const timer=setInterval(()=>setActivities(items=>{const remaining=items.filter(a=>a.expiresAt>Date.now());return remaining.length===items.length?items:remaining;}),1000);
     return()=>{s.off("receipt.changed",changed);s.off("chat.changed",changed);s.off("chat.activity",receive);s.off("connect",sync);s.off("sync",sync);clearInterval(timer);};
   },[userId,selected,loadReceipts,socket,connectionKey]);
   useEffect(()=>{

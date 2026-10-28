@@ -370,10 +370,12 @@ button:disabled {
 .sticker-metadata-form label { display: grid; gap: 6px; }
 .sticker-metadata-form input, .sticker-metadata-form textarea { width: 100%; min-width: 0; }
 .sticker-editor-image { width: 140px; height: 140px; object-fit: contain; justify-self: center; }
-.sticker-suggestions { position: relative; display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--line); background: white; border-radius: 16px 16px 0 0; }
-.sticker-suggestions > button { flex: 1 1 0; min-width: 0; max-width: 76px; border: 0; border-radius: 10px; background: transparent; padding: 4px; cursor: pointer; touch-action: pan-y; }
-.sticker-suggestions > button:hover, .sticker-suggestions > button:focus-visible { background: #eef1fb; }
-.sticker-suggestions > button img { display: block; width: 100%; aspect-ratio: 1; object-fit: contain; pointer-events: none; }
+.composer-dock { flex-direction: column; align-items: stretch; gap: 8px; }
+.sticker-suggestions { position: relative; width: 100%; min-width: 0; padding: 8px; background: white; border-radius: 16px; box-shadow: 0 4px 20px #0001; }
+.sticker-suggestion-items { display: flex; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain; }
+.sticker-suggestion-items > button { flex: 0 0 88px; width: 88px; border: 0; border-radius: 10px; background: transparent; padding: 4px; cursor: pointer; touch-action: pan-x; }
+.sticker-suggestion-items > button:hover, .sticker-suggestion-items > button:focus-visible { background: #eef1fb; }
+.sticker-suggestion-items > button img { display: block; width: 100%; aspect-ratio: 1; object-fit: contain; pointer-events: none; }
 .sticker-suggestion-preview { position: absolute; bottom: calc(100% + 8px); left: 8px; width: min(240px, calc(100vw - 40px)); display: grid; justify-items: center; gap: 8px; padding: 12px; border-radius: 16px; background: white; box-shadow: 0 8px 30px #0002; pointer-events: none; z-index: 5; }
 .sticker-suggestion-preview img { width: 180px; height: 180px; max-width: 100%; object-fit: contain; }
 
@@ -529,28 +531,13 @@ button:disabled {
   .emoji-menu-body { height:min(430px, 60dvh); }
 }
 
-/* Match the visible send circle to adjacent glyphs while retaining the full tap target. */
-.composer-actions.live .send-button {
-  --send-visible-size: 23px;
-  position: relative;
-  border: 0;
-}
-.composer-actions.live .send-button::before {
-  content: "";
-  position: absolute;
-  width: var(--send-visible-size);
-  height: var(--send-visible-size);
-  border: 1px solid #bfc5d2;
-  border-radius: 50%;
-  pointer-events: none;
-}
-.composer-actions.live .send-mark {
-  position: relative;
-  width: calc(var(--send-visible-size) - 7px);
-}
-@media (max-width: 360px) {
-  .composer-actions.live .send-button { --send-visible-size: 21px; }
-}
+/* Keep a familiar send glyph at the same size as adjacent controls. */
+.composer-actions.live .send-button { border: 0; color: #3457d5; }
+.composer-actions.live .send-button:disabled { color: #929bad; opacity: 0.5; }
+.composer-input,
+.composer-input:focus,
+.composer-input:focus-visible { outline: none; border: 0; box-shadow: none; }
+.composer-open:focus-within { border-color: #aab4d2; }
 
 .admin-sections.settings-sections { display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; }
 .settings-sections .admin-sections-heading { flex-shrink:0; }
@@ -623,3 +610,66 @@ button:disabled {
 @media (hover: hover) {
   .composer-action[data-tooltip]:hover::after { visibility: visible; opacity: 1; }
 }
+
+/* Mobile composer: attachments, input, emoji, circle recording, voice/send. */
+.composer-line-layout { display: contents; }
+.app[data-device="mobile"] .composer-line-layout {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) repeat(3, 36px);
+  align-items: end;
+  gap: 2px;
+  padding: 5px;
+}
+.app[data-device="mobile"] .composer-context,
+.app[data-device="mobile"] .photo-previews { grid-column: 1 / -1; }
+.app[data-device="mobile"] .composer-body { grid-column: 2; grid-row: 1; min-width: 0; min-height: 36px; }
+.app[data-device="mobile"] .composer-input { padding: 7px 3px; min-height: 36px; }
+.app[data-device="mobile"] .composer-actions.live { display: contents; }
+.app[data-device="mobile"] .composer-actions.live .composer-desktop-extra { display: none; }
+.app[data-device="mobile"] .composer-attach-menu { grid-column: 1; grid-row: 1; }
+.app[data-device="mobile"] .composer-emoji { grid-column: 3; grid-row: 1; }
+.app[data-device="mobile"] .composer-video { grid-column: 4; grid-row: 1; }
+.app[data-device="mobile"] .composer-mic,
+.app[data-device="mobile"] .composer-actions.live .send-button { grid-column: 5; grid-row: 1; margin: 0; }
+.composer-attach-menu { position: relative; align-self: end; }
+.composer-attach-menu > summary { list-style: none; }
+.composer-attach-menu > summary::-webkit-details-marker { display: none; }
+.composer-attach-options {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 10;
+  display: grid;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 4px 24px #0002;
+}
+.composer-attach-options button { display: flex; align-items: center; gap: 10px; padding: 12px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); text-align: left; }
+.composer-attach-options button:hover { background: #eef1fb; }
+.composer-attach-options svg { width: 22px; height: 22px; }
+
+/* Balance visible glyphs: the round emoji occupies less of its SVG viewBox. */
+.composer-actions.live .composer-action svg { width: 23px; height: 23px; }
+.composer-actions.live .composer-emoji svg { width: 25px; height: 25px; }
+.composer-actions.live .composer-attach-menu > summary svg,
+.composer-actions.live .composer-desktop-extra[aria-label="Прикрепить файл или видео"] svg,
+.composer-actions.live .send-button svg { width: 21px; height: 21px; }
+
+.composer-actions.live .composer-video svg,
+.composer-actions.live .composer-mic svg { width: 24px; height: 24px; }
+
+/* Keep text entry spacious while typing; primary action stays at the right. */
+.app[data-device="mobile"] .composer-line-layout { grid-template-columns: 40px minmax(0, 1fr) repeat(3, 40px); }
+.app[data-device="mobile"] .composer-actions.live .composer-action { width: 40px; height: 40px; flex-basis: 40px; }
+.app[data-device="mobile"] .composer-actions.live .composer-action svg { width: 25px; height: 25px; }
+.app[data-device="mobile"] .composer-actions.live .composer-emoji svg { width: 28px; height: 28px; }
+.app[data-device="mobile"] .composer-actions.live .composer-mic,
+.app[data-device="mobile"] .composer-actions.live .send-button { background: #3457d5; color: white; }
+.app[data-device="mobile"] .composer-actions.live .send-button:disabled { opacity: 0.5; }
+.app[data-device="mobile"] .composer-line-layout[data-has-content="true"] { grid-template-columns: 40px minmax(0, 1fr) 40px; }
+.app[data-device="mobile"] .composer-line-layout[data-has-content="true"] .composer-attach-menu,
+.app[data-device="mobile"] .composer-line-layout[data-has-content="true"] .composer-video { display: none; }
+.app[data-device="mobile"] .composer-line-layout[data-has-content="true"] .composer-emoji { grid-column: 1; }
+.app[data-device="mobile"] .composer-line-layout[data-has-content="true"] .send-button { grid-column: 3; }

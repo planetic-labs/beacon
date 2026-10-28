@@ -2,8 +2,8 @@ import Fuse from "fuse.js";
 import { emojiKey, extractEmoji, normalizeStickerText, type Sticker } from "@beacon/shared";
 
 export function createStickerSearch(stickers: Sticker[]) {
-  const entries = stickers.map(sticker => ({ sticker, label: normalizeStickerText(sticker.label), keywords: (sticker.keywords ?? []).map(normalizeStickerText) }));
-  const fuse = new Fuse(entries, { keys: ["label", "keywords"], threshold: 0.3, ignoreLocation: true, minMatchCharLength: 2, includeScore: true });
+  const entries = stickers.map(sticker => ({ sticker, keywords: (sticker.keywords ?? []).map(normalizeStickerText) }));
+  const fuse = new Fuse(entries, { keys: ["keywords"], threshold: 0.3, ignoreLocation: true, minMatchCharLength: 2, includeScore: true });
   return (query: string, recent: string[] = [], limit = 48): Sticker[] => {
     const text = normalizeStickerText(query);
     if (!text) return [];
@@ -13,7 +13,7 @@ export function createStickerSearch(stickers: Sticker[]) {
     const scores = new Map<string, number>();
     for (const entry of entries) {
       if (emojiKeys.length && (entry.sticker.emojis ?? []).some(emoji => emojiKeys.includes(emojiKey(emoji)))) scores.set(entry.sticker.id, 0);
-      if (!emojiOnly && (entry.label === text || entry.keywords.includes(text))) scores.set(entry.sticker.id, 0);
+      if (!emojiOnly && entry.keywords.includes(text)) scores.set(entry.sticker.id, 0);
     }
     if (!emojiOnly && text.length >= 2) for (const result of fuse.search(text))
       if (!scores.has(result.item.sticker.id)) scores.set(result.item.sticker.id, 1 + (result.score ?? 1));

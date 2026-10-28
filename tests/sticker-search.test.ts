@@ -31,11 +31,15 @@ test("local search matches metadata, emoji and typos, prioritizing exact and rec
   assert.deepEqual(search("👋🏽"), []);
   assert.deepEqual(search("несуществующийтег"), []);
   assert.equal(search("привет", [], 1).length, 1);
+  assert.deepEqual(search("Машущий кот"), [], "labels do not participate in text search");
+  assert.deepEqual(search("Обнимаю"), [], "an exact label without a matching keyword is excluded");
+  const labelOnly=createStickerSearch([{id:"label-only",fileId:"6",label:"Привет",emojis:["👋"],keywords:[]}]);
+  assert.deepEqual(labelOnly("привет"), []);
+  assert.deepEqual(labelOnly("превет"), []);
+  assert.equal(labelOnly("👋")[0].id,"label-only");
 });
-test("composer suggestions use the trailing word or a complete emoji", () => {
-  assert.equal(stickerSuggestionQuery("Ну что, привет"), "привет");
-  assert.equal(stickerSuggestionQuery("люблю ❤️ "), "❤️");
-  assert.equal(stickerSuggestionQuery("семья 👨‍👩‍👧‍👦"), "👨‍👩‍👧‍👦");
-  assert.equal(stickerSuggestionQuery("а"), "");
-  assert.equal(stickerSuggestionQuery("привет!"), "");
+test("composer suggestions accept only one word or one complete emoji", () => {
+  for (const word of ["привет", "  привет  ", "Hello", "превет"]) assert.equal(stickerSuggestionQuery(word), word.trim());
+  for (const emoji of ["❤️", "👨‍👩‍👧‍👦", "👋🏽", "🇷🇺", "  🙂  "]) assert.equal(stickerSuggestionQuery(emoji), emoji.trim());
+  for (const text of ["", "а", "Ну что, привет", "люблю ❤️ ", "семья 👨‍👩‍👧‍👦", "привет!", "привет\nмир", "🙂🙂", "🙂 привет", "привет 🙂", "@привет", "https://example.com/привет"]) assert.equal(stickerSuggestionQuery(text), "", text);
 });

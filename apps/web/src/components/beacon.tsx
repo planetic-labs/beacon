@@ -1,3 +1,4 @@
+import { ComposerFrame, createComposerState } from "./composer-state";
 import { DeviceData } from "./device-data";
 import { useOfflineSync } from "./offline-sync";
 import { restoreAccount, readCache, localAccount, localGeneration, forgetAccount, queued, enqueue, acknowledge, storageProblem } from "../offline";
@@ -47,7 +48,9 @@ export function Beacon(): ReactNode {
   const [searchRevision,setSearchRevision]=useState(0);
   const [searchOpen,setSearchOpen] = useState(false);
   const [searchScope,setSearchScope] = useState<{id:string;name:string}|undefined>(undefined);
-  const [mentionCursor,setMentionCursor] = useState(0);
+  const [composerState] = useState(createComposerState);
+  const setMentionCursor = composerState.cursor;
+  const setDraftValue = composerState.text;
   const mentions = useRef<Mention[]>([]), draftValue = useRef("");
   const mentionDrafts = useRef<Record<string,Mention[]>>({});
   const [chatMembers,setChatMembers] = useState<User[]>([]);
@@ -95,8 +98,8 @@ export function Beacon(): ReactNode {
   const sectionTitle=section==="profile"?"Настройки":"Администрирование";
   const adminPage = adminSections.find(item => item.path === pathname) ?? adminSections[0];
   const sectionRoutes = { chats: "/", admin: "/admin", profile: "/settings" } as const;
-  const setSection = (value: keyof typeof sectionRoutes) => { void navigate({ to: sectionRoutes[value], search: {} }); };
-  const closeChat = () => { setSelected(null); selectedRef.current = null; void navigate({ to: "/", search: {} }); };
+  const setSection = (value: keyof typeof sectionRoutes) => { draftSync.current.flush(); void navigate({ to: sectionRoutes[value], search: {} }); };
+  const closeChat = () => { draftSync.current.flush(); setSelected(null); selectedRef.current = null; void navigate({ to: "/", search: {} }); };
   const [device, setDevice] = useState("desktop"),
     [me, setMe] = useState<User | null>(null),
     [loading, setLoading] = useState(true),
@@ -114,7 +117,6 @@ export function Beacon(): ReactNode {
     [historyBusy, setHistoryBusy] = useState(false);
   const [online, setOnline] = useState(true),
     [networkAvailable, setNetworkAvailable] = useState(true),
-    [draft, setDraftValue] = useState(""),
     [context, setContext] = useState<{
       kind: "reply" | "edit";
       message: Message;
@@ -127,7 +129,7 @@ export function Beacon(): ReactNode {
     if(sync && selectedRef.current && context?.kind!=="edit"){
       const id=selectedRef.current;
       drafts.current[id]=next;
-      queueMicrotask(()=>{mentionDrafts.current[id]=mentions.current.slice();draftSync.current.change(id,{text:next,mentions:mentionDrafts.current[id]});});
+      mentionDrafts.current[id]=mentions.current.slice();draftSync.current.change(id,{text:next,mentions:mentionDrafts.current[id]});
     }
   }
   const [modal, setModal] = useState<
@@ -182,13 +184,13 @@ export function Beacon(): ReactNode {
     const save = (event: Event) => {
       if (busy || context?.kind === "edit") { event.preventDefault(); return; }
       const saved = { ...drafts.current };
-      if (selected) saved[selected] = draft;
+      if (selected) saved[selected] = draftValue.current;
       try { sessionStorage.setItem(`update-drafts:${me.id}`, JSON.stringify(saved)); }
       catch { if (Object.values(saved).some(text => text.length)) event.preventDefault(); }
     };
     window.addEventListener("beacon:before-update", save);
     return () => window.removeEventListener("beacon:before-update", save);
-  }, [me?.id, selected, draft, context, busy]);
+  }, [me?.id, selected, context, busy]);
   const restored=useRef(false), refreshingMe=useRef(false);
   const refreshMe = useCallback(async () => {
     if(refreshingMe.current)return;refreshingMe.current=true;
@@ -299,8 +301,9 @@ export function Beacon(): ReactNode {
       if(pathname!==`/chats/${id}`||legacyChat)void navigate({to:"/chats/$chatId",params:{chatId:id},search:{},replace:!!legacyChat});
       return;
     }
+    draftSync.current.flush();
     setEmojiOpen(false);
-    if (selectedRef.current && context?.kind!=="edit") { drafts.current[selectedRef.current] = draft; mentionDrafts.current[selectedRef.current]=mentions.current; }
+    if (selectedRef.current && context?.kind!=="edit") { drafts.current[selectedRef.current] = draftValue.current; mentionDrafts.current[selectedRef.current]=mentions.current; }
     historyVersion.current++;aroundBusy.current=false;historicalRef.current=false;setHistorical(false);
     initialScroll.current=id;positionedUnread.current=false;interactedWithHistory.current=false;
     setSelected(id);
@@ -515,21 +518,6 @@ export function Beacon(): ReactNode {
     window.addEventListener("beacon:history-updated",updated);
     return()=>{live=false;window.removeEventListener("beacon:history-updated",updated);};
   },[selected]);
-  useEffect(() => {
-    const input = textarea.current;
-    if (!input) return;
-    input.style.height = "auto";
-    const style = getComputedStyle(input),
-      lh = parseFloat(style.lineHeight) || 20,
-      pad = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
-    input.style.height =
-      Math.max(
-        lh * (device === "mobile" ? 1 : 2) + pad,
-        Math.min(input.scrollHeight, lh * (device === "mobile" ? 8 : 13) + pad),
-      ) + "px";
-    input.style.overflowY =
-      input.scrollHeight > parseFloat(input.style.height) ? "auto" : "hidden";
-  }, [draft, device, context]);
   const [queueReady,setQueueReady]=useState<string|null>(null),[retryTick,setRetryTick]=useState(0);
   const flushing=useRef(false),retryAfter=useRef(new Map<string,number>());
   useEffect(()=>{
@@ -551,7 +539,7 @@ export function Beacon(): ReactNode {
   useEffect(()=>{
     if(me&&queueReady===me.id)try{sessionStorage.setItem(`pending:${me.id}`,JSON.stringify(pending.filter(item=>item.stickerId||item.forwardId||item.forwards)));}catch{/* Non-text pending items retain their previous per-tab behavior. */}
   },[pending,queueReady,me?.id]);
-  useEffect(()=>{const timer=setInterval(()=>setRetryTick(n=>n+1),5000);return()=>clearInterval(timer);},[]);
+  useEffect(()=>{if(!pending.some(item=>!item.failed))return;const timer=setInterval(()=>setRetryTick(n=>n+1),5000);return()=>clearInterval(timer);},[pending]);
   async function deliver(item: Pending) {
     const owner=meRef.current?.id,generation=localGeneration();
     if(!owner||sending.current.has(item.clientMessageId))return false;
@@ -630,7 +618,7 @@ export function Beacon(): ReactNode {
   useEffect(() => { setPhotos([]); setRecordingKind(null); setAttachment(null);setDeleting(null);setSelectionMode(false);setSelectedMessages([]);setForwardSources([]);setPhotoView(null);setAttachmentsOpen(false);setReadDetails(null); }, [selected]);
   async function submitMessage(e: FormEvent) {
     e.preventDefault();
-    if (!selected || (!draft.trim() && !photos.length) || busy || queueReady!==me?.id) return;
+    if (!selected || (!draftValue.current.trim() && !photos.length) || busy || queueReady!==me?.id) return;
     activity(null);
     if (photos.length && context?.kind !== "edit") {
       const chatId = selected;
@@ -638,7 +626,7 @@ export function Beacon(): ReactNode {
       try {
         const form = new FormData();
         photos.forEach(photo => form.append("file", photo)); form.set("chatId", chatId);
-        form.set("clientMessageId", photoMessageId.current); form.set("text", draft); form.set("mentions",JSON.stringify(mentions.current));
+        form.set("clientMessageId", photoMessageId.current); form.set("text", draftValue.current); form.set("mentions",JSON.stringify(mentions.current));
         if (context?.message.id) form.set("replyToId", context.message.id);
         const response = await fetch("/api/photos", { method: "POST", body: form, signal: AbortSignal.timeout(120000) });
         if (response.status === 401) window.dispatchEvent(new Event("beacon:unauthorized"));
@@ -653,7 +641,7 @@ export function Beacon(): ReactNode {
     if (context?.kind === "edit") {
       setBusy(true);
       try {
-        await api(`messages/${context.message.id}`, "PATCH", { text: draft, mentions: mentions.current });
+        await api(`messages/${context.message.id}`, "PATCH", { text: draftValue.current, mentions: mentions.current });
         setContext(null);
         setDraft(drafts.current[selected] ?? "",false);
         mentions.current=mentionDrafts.current[selected]??[];
@@ -668,7 +656,7 @@ export function Beacon(): ReactNode {
     const p = {
       chatId: selected,
       clientMessageId: v7(),
-      text: draft,
+      text: draftValue.current,
       mentions: [...mentions.current],
       replyToId: context?.message.id,
     };
@@ -683,8 +671,8 @@ export function Beacon(): ReactNode {
     if (!selected || busy || context?.kind === "edit") return;
     setPending(items => [...items, { chatId: selected, clientMessageId: v7(), text: `Стикер: ${sticker.label}`, stickerId: sticker.id, replyToId: context?.kind === "reply" ? context.message.id : undefined }]);
     if (removeTrigger) {
-      const query = stickerSuggestionQuery(draft);
-      const next = query ? draft.trimEnd().slice(0, -query.length) : draft;
+      const query = stickerSuggestionQuery(draftValue.current);
+      const next = query ? draftValue.current.trimEnd().slice(0, -query.length) : draftValue.current;
       setDraft(next); drafts.current[selected] = next;
     }
     setContext(null);
@@ -760,7 +748,7 @@ export function Beacon(): ReactNode {
     jumpRequest.current={chatId:hit.chatId,messageId:hit.id};openChat(hit.chatId);
   }
   function chooseMention(user:User,start:number,end:number) {
-    const label=`@${user.name}`, next=draft.slice(0,start)+label+" "+draft.slice(end);
+    const label=`@${user.name}`, next=draftValue.current.slice(0,start)+label+" "+draftValue.current.slice(end);
     if(next.length>10000)return;
     setDraft(next);mentions.current=[...mentions.current,{userId:user.id,start,length:label.length}];
     const position=start+label.length+1;setMentionCursor(position);
@@ -1008,7 +996,7 @@ export function Beacon(): ReactNode {
   }
   function chooseContext(kind: "reply" | "edit", m: Message) {
     if (kind === "edit") {
-      if (selected) {drafts.current[selected] = draft;mentionDrafts.current[selected]=mentions.current;}
+      if (selected) {drafts.current[selected] = draftValue.current;mentionDrafts.current[selected]=mentions.current;}
       setDraft(m.content.text,false);
       mentions.current=[...(m.content.mentions??[])];
     }
@@ -1142,7 +1130,7 @@ export function Beacon(): ReactNode {
                     className="back-button"
                     aria-label="Назад к списку"
                     onClick={() => {
-                      drafts.current[selected] = draft;
+                      drafts.current[selected] = draftValue.current;
                       mentionDrafts.current[selected]=mentions.current;
                       closeChat();
                     }}
@@ -1363,6 +1351,8 @@ export function Beacon(): ReactNode {
                       ))}
                   </div>
                 </div>
+                <ComposerFrame state={composerState} textarea={textarea} device={device} context={context}>
+                  {(draft, mentionCursor) => (
                 <div
                   className="composer-dock"
                   data-composer-state={context?.kind ?? "input"}
@@ -1391,6 +1381,7 @@ export function Beacon(): ReactNode {
                       </div>
                     )}
                     {!!photos.length && <div className="photo-previews">{photos.map((photo, index) => <div className="photo-preview" key={index}><PhotoThumbnail file={photo} index={index} /><button type="button" aria-label={`Убрать фото ${index + 1}`} disabled={busy} onClick={() => { photoMessageId.current = v7(); setPhotos(items => items.filter((_, i) => i !== index)); }}>Убрать</button></div>)}</div>}
+                    <div className="composer-line-layout" data-has-content={!!draft.trim() || !!photos.length || context?.kind === "edit"}>
                     <div className="composer-body">
                       <label className="sr-only" htmlFor="composer">
                         Сообщение
@@ -1421,16 +1412,25 @@ export function Beacon(): ReactNode {
                       />
                     </div>
                     <div className="composer-actions live">
+                      {device === "mobile" && <details className="composer-attach-menu" key={selected} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.open = false; }} onKeyDown={e => { if (e.key === "Escape") { e.currentTarget.open = false; e.currentTarget.querySelector("summary")?.focus(); } }}>
+                        <summary className="composer-action" aria-label="Прикрепить" data-tooltip="Прикрепить"><Icon name="file" /></summary>
+                        <div className="composer-attach-options">
+                          <button type="button" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={e => { e.currentTarget.closest("details")?.removeAttribute("open"); attachmentInput.current?.click(); }}><Icon name="file" />Файл или видео</button>
+                          <button type="button" disabled={busy || context?.kind === "edit"} onClick={e => { e.currentTarget.closest("details")?.removeAttribute("open"); photoInput.current?.click(); }}><Icon name="photo" />Фото</button>
+                          <button type="button" disabled={busy || context?.kind === "edit"} onClick={e => { e.currentTarget.closest("details")?.removeAttribute("open"); setStickersOpen(true); }}><Icon name="sticker" />Стикер</button>
+                        </div>
+                      </details>}
+
                       <input type="file" aria-label="Выбрать файл или видео" ref={attachmentInput} hidden onChange={e=>{
                         const file=e.target.files?.[0];e.target.value="";if(!file||!selected)return;
                         const kind:AttachmentKind=file.type.startsWith("video/")||/\.(mp4|webm|mov|m4v|mkv|avi|mpeg|mpg|ts)$/iu.test(file.name)?"video":"file";
                         if(!file.size||file.size>attachmentLimits[kind]){notify(new Error(`Допустимый размер: ${kind==="video"?"500":"100"} МБ`));return;}
                         setAttachment({file,kind,chatId:selected});
                       }}/>
-                      <button type="button" className="composer-action" aria-label="Прикрепить файл или видео" data-tooltip="Отправить файл или видео" disabled={busy||context?.kind==="edit"||!!photos.length} onClick={()=>attachmentInput.current?.click()}><Icon name="file"/></button>
-                      <button type="button" className="composer-action" aria-label="Записать голосовое сообщение" data-tooltip="Отправить голосовое сообщение" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("audio")}><Icon name="mic" /></button>
-                      <button type="button" className="composer-action" aria-label="Записать видеокружок" data-tooltip="Отправить видеокружок" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("circle")}><Icon name="video" /></button>
-                      <button type="button" className="composer-action" aria-label="Выбрать стикер" data-tooltip="Отправить стикер" disabled={busy || context?.kind === "edit"} onClick={() => setStickersOpen(true)}><Icon name="sticker" /></button>
+                      <button type="button" className="composer-action composer-desktop-extra" aria-label="Прикрепить файл или видео" data-tooltip="Отправить файл или видео" disabled={busy||context?.kind==="edit"||!!photos.length} onClick={()=>attachmentInput.current?.click()}><Icon name="file"/></button>
+                      {(device !== "mobile" || (!draft.trim() && !photos.length && context?.kind !== "edit")) && <button type="button" className="composer-action composer-mic" aria-label="Записать голосовое сообщение" data-tooltip="Отправить голосовое сообщение" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("audio")}><Icon name="mic" /></button>}
+                      <button type="button" className="composer-action composer-video" aria-label="Записать видеокружок" data-tooltip="Отправить видеокружок" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("circle")}><Icon name="video" /></button>
+                      <button type="button" className="composer-action composer-desktop-extra" aria-label="Выбрать стикер" data-tooltip="Отправить стикер" disabled={busy || context?.kind === "edit"} onClick={() => setStickersOpen(true)}><Icon name="sticker" /></button>
                       <input ref={photoInput} type="file" multiple className="sr-only" aria-label="Выбрать фото" accept="image/jpeg,image/png,image/webp" disabled={busy || context?.kind === "edit"} onChange={e => {
                         const files = Array.from(e.target.files ?? []); e.target.value = "";
                         if (!files.length) return;
@@ -1438,9 +1438,9 @@ export function Beacon(): ReactNode {
                         if (files.some(file => !file.size || file.size > 5 * 1024 * 1024 || !["image/jpeg", "image/png", "image/webp"].includes(file.type))) { notify(new Error("Выберите PNG, JPEG или WebP до 5 МБ каждый")); return; }
                         photoMessageId.current = v7(); setPhotos(items => [...items, ...files]);
                       }} />
-                      <button type="button" className="composer-action" aria-label="Прикрепить фото" data-tooltip="Отправить фото" disabled={busy || context?.kind === "edit"} onClick={() => photoInput.current?.click()}><Icon name="photo" /></button>
+                      <button type="button" className="composer-action composer-desktop-extra" aria-label="Прикрепить фото" data-tooltip="Отправить фото" disabled={busy || context?.kind === "edit"} onClick={() => photoInput.current?.click()}><Icon name="photo" /></button>
                       <button
-                        className="composer-action"
+                        className="composer-action composer-emoji"
                         type="button"
                         aria-label="Добавить эмодзи" data-tooltip="Добавить эмодзи"
                         disabled={busy}
@@ -1457,7 +1457,7 @@ export function Beacon(): ReactNode {
                           <path d="M8.8 10h.1M15.1 10h.1M8.8 14c1.8 1.7 4.6 1.7 6.4 0" />
                         </svg>
                       </button>
-                      <button
+                      {(device !== "mobile" || !!draft.trim() || !!photos.length || context?.kind === "edit") && <button
                         className="composer-action send-button"
                         data-tooltip={context?.kind==="edit"?"Сохранить изменения":"Отправить сообщение"}
                         disabled={(!draft.trim() && !photos.length) || busy || queueReady!==me.id}
@@ -1467,16 +1467,14 @@ export function Beacon(): ReactNode {
                             : "Отправить сообщение"
                         }
                       >
-                        <img
-                          className="send-mark"
-                          src="/assets/SERDTsA.png"
-                          alt=""
-                          draggable={false}
-                        />
-                      </button>
+                        <Icon name="send" />
+                      </button>}
+                    </div>
                     </div>
                   </form>
                 </div>
+                  )}
+                </ComposerFrame>
               </>
             ) : (
               <div className="empty-state">

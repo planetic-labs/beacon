@@ -62,22 +62,30 @@ try {
     await page.getByRole("button", { name: "Убрать фото 1", exact: true }).click();
     await expect(page.locator(".photo-preview")).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Выбрать стикер", exact: true }).click();
+    if (width < 780) { await page.getByLabel("Прикрепить", { exact: true }).click(); await page.getByRole("button", { name: "Стикер", exact: true }).click(); }
+    else await page.getByRole("button", { name: "Выбрать стикер", exact: true }).click();
     await page.getByRole("button", { name: "Тестовый набор", exact: true }).click();
     await page.getByRole("textbox", { name: "Поиск стикеров", exact: true }).fill("👋");
     await page.getByRole("button", { name: "Отправить стикер Привет", exact: true }).click();
     await expect(page.locator(".message-sticker")).toBeVisible();
     assert.equal(await page.locator(".sticker-bubble").evaluate(node => getComputedStyle(node).backgroundColor), "rgba(0, 0, 0, 0)");
-    await page.getByRole("button", { name: "Выбрать стикер", exact: true }).click();
+    if (width < 780) { await page.getByLabel("Прикрепить", { exact: true }).click(); await page.getByRole("button", { name: "Стикер", exact: true }).click(); }
+    else await page.getByRole("button", { name: "Выбрать стикер", exact: true }).click();
     await expect(page.getByRole("button", { name: "Отправить стикер Привет", exact: true })).toBeVisible();
     const dialog = page.getByRole("dialog");
     const box = await dialog.boundingBox(); assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1);
     await page.keyboard.press("Escape");
     if (await dialog.isVisible()) await dialog.getByRole("button", { name: /Закрыть/ }).click();
     const composer = page.getByRole("textbox", { name: "Сообщение", exact: true });
+    const beforeSuggestions = await composer.boundingBox();
     await composer.fill("👋");
     const suggestion = page.getByRole("button", { name: "Предложенный стикер Привет", exact: true });
     await expect(suggestion).toBeVisible();
+    const inputBounds = await composer.boundingBox();
+    const suggestionsBounds = await page.getByLabel("Подходящие стикеры", { exact: true }).boundingBox();
+    assert.ok(inputBounds && beforeSuggestions && inputBounds.width >= beforeSuggestions.width - 1, "suggestions never narrow the composer");
+    assert.ok(inputBounds && suggestionsBounds && suggestionsBounds.y + suggestionsBounds.height <= inputBounds.y, "suggestions appear above the input");
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "suggestions do not overflow the viewport");
     if (width < 780) {
       await suggestion.dispatchEvent("pointerdown", { pointerType: "touch", pointerId: 1, isPrimary: true });
       await expect(page.getByRole("img", { name: "Предпросмотр: Привет", exact: true })).toBeVisible();
@@ -90,6 +98,13 @@ try {
     await expect(page.getByRole("img", { name: "Предпросмотр: Привет", exact: true })).toBeVisible();
     await composer.fill("превет");
     await expect(suggestion).toBeVisible();
+    await composer.fill("длинное сообщение привет");
+    await expect(page.getByLabel("Подходящие стикеры", { exact: true })).toHaveCount(0);
+    await composer.fill("люблю 👋");
+    await expect(page.getByLabel("Подходящие стикеры", { exact: true })).toHaveCount(0);
+    await composer.fill("👋👋");
+    await expect(page.getByLabel("Подходящие стикеры", { exact: true })).toHaveCount(0);
+    await composer.fill("превет");await expect(suggestion).toBeVisible();
     const reads = catalogReads;
     await composer.fill("привет");
     await expect(suggestion).toBeVisible();
@@ -121,7 +136,8 @@ try {
     await expect(page.locator(".sticker-admin-tile")).toHaveCount(0);
     await page.goto(`${base}/chats/${chatId}`);
     await expect(page.locator(".message-sticker")).toBeVisible();
-    await page.getByRole("button", { name: "Выбрать стикер", exact: true }).click();
+    if (width < 780) { await page.getByLabel("Прикрепить", { exact: true }).click(); await page.getByRole("button", { name: "Стикер", exact: true }).click(); }
+    else await page.getByRole("button", { name: "Выбрать стикер", exact: true }).click();
     await expect(page.getByRole("button", { name: "Отправить стикер Привет", exact: true })).toHaveCount(0);
     await page.goto(`${base}/admin/stickers`);
 
