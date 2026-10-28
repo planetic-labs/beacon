@@ -94,3 +94,22 @@ publish flow. This does not affect the immutability of an image digest.
 Production Compose, automatic migrations, backup policies, domains and server
 setup are intentionally left for deployment configuration. A successful image
 build is not a claim that an arbitrary database migration can be rolled back.
+
+## Validation stages
+
+Pull requests always report the required `Checks` status. Documentation changes only
+check the diff. Ordinary code changes run type checking, dependency audit and unit
+tests, plus browser suites selected by feature and database integration tests for
+API/shared-code changes. Authentication, schema, dependency, container, CI and
+unclassified changes run the full suite. Renames include both old and new paths.
+
+A push to `main` runs types, unit tests and audit without repeating the full browser
+and container suite. CodeQL and branch protection remain enabled. Manual CI runs
+use the full suite.
+
+Publishing a GitHub release starts full validation of its exact commit, including
+production build, migrations, integration, browser and container smoke tests.
+The release image is published only after validation succeeds. If it fails, the
+GitHub release may exist but no new image is published. The same immutable image
+can then be checked on preview and promoted to production without rebuilding.
+The `Full validation` workflow also allows a manual full run without publishing.

@@ -1,6 +1,35 @@
 #!/bin/sh
 set -eu
 umask 077
+mode=${1:-full}
+case "$mode" in
+  docs) printf 'Documentation/metadata only; no application tests.\n'; exit 0 ;;
+  full|quick|selective) ;;
+  *) printf 'Unknown CI mode.\n' >&2; exit 1 ;;
+esac
+if [ "$mode" != full ] && [ ! -f "${2:-}" ]; then
+  printf 'Selective/quick checks require a generated CI plan.\n' >&2; exit 1
+fi
+if [ "${CI_TOOLING_READY:-false}" != true ]; then
+  docker build --target base -t beacon-tooling .
+fi
+browsers=''
+integration=false
+if [ "$mode" != full ]; then
+  plan=$(realpath "$2")
+  browsers=$(docker run --rm -v "$plan:/run/ci-plan.json:ro" beacon-tooling node scripts/ci-plan.mjs --field browsers /run/ci-plan.json "$mode")
+  integration=$(docker run --rm -v "$plan:/run/ci-plan.json:ro" beacon-tooling node scripts/ci-plan.mjs --field integration /run/ci-plan.json "$mode")
+  docker run --rm beacon-tooling pnpm typecheck
+  docker run --rm beacon-tooling pnpm audit --audit-level low
+  docker run --rm beacon-tooling node scripts/unit-tests.mjs
+  if [ -n "$browsers" ]; then
+    docker build -f Dockerfile.test -t beacon-browser .
+    for suite in $browsers; do
+      docker run --rm beacon-browser pnpm exec tsx "tests/$suite"
+    done
+  fi
+  if [ "$integration" = false ]; then exit 0; fi
+fi
 runtime=$(mktemp -d)
 project="beacon-ci-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 config="$runtime/test.env"
@@ -32,7 +61,7 @@ EOF
 cat > "$override" <<'EOF'
 services:
   web:
-    image: beacon-production-check
+    image: ${CI_TEST_IMAGE:-beacon-production-check}
     command: [pnpm, start]
     volumes:
       - ${CI_RUNTIME:?Set fixture directory}:/run/test
@@ -40,8 +69,14 @@ services:
     image: beacon-tooling
 EOF
 export CI_RUNTIME="$runtime"
-docker build --target base -t beacon-tooling .
-docker build --target production -t beacon-production-check .
+if [ "$mode" != full ]; then
+  export CI_TEST_IMAGE=beacon-tooling
+  compose up -d --wait db
+  compose run --rm --no-deps web pnpm db:migrate
+  compose run --rm --no-deps web pnpm exec tsx --test tests/integration.test.ts tests/email-normalization.test.ts
+  exit 0
+fi
+docker build --cache-from beacon-tooling --build-arg "RELEASE_VERSION=${CI_RELEASE_VERSION:-}" --target production -t beacon-production-check .
 docker build -f Dockerfile.test -t beacon-browser .
 # Static PWA lifecycle checks use synthetic API data and no database.
 docker run --rm beacon-browser pnpm exec tsx tests/browser-pwa.ts
@@ -55,6 +90,7 @@ docker run --rm beacon-browser pnpm exec tsx tests/browser-community-chats.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-media.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-emoji.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-settings.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-stickers.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-sticker-ownership.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-passkey-registration.ts
 # Native recording UI checks use fake devices and synthetic API responses.

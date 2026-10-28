@@ -41,9 +41,19 @@ jobs:
             const validate = require('./.github/scripts/release-image.cjs');
             await validate({github, context, core, revision: process.env.RELEASE_REVISION});
 
+  full-checks:
+    name: Full release validation
+    needs: validate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/full-checks.yml
+    with:
+      revision: ${{ needs.validate.outputs.revision }}
+      version: ${{ needs.validate.outputs.version }}
+
   publish:
     name: Publish release image
-    needs: validate
+    needs: [validate, full-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:

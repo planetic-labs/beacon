@@ -23,5 +23,28 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Build, audit and test in Docker
-        run: sh scripts/ci.sh
+          fetch-depth: 0
+      - name: Select checks for changed files
+        id: plan
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_EVENT: ${{ github.event_name }}
+        run: |
+          CI_FORCE_FULL=false
+          if ! git cat-file -e "$BASE_REVISION^{commit}" 2>/dev/null; then
+            CI_FORCE_FULL=true
+            : > "$RUNNER_TEMP/beacon-ci-paths"
+          else
+            git diff --check "$BASE_REVISION" HEAD
+            git diff --no-renames --name-only -z "$BASE_REVISION" HEAD > "$RUNNER_TEMP/beacon-ci-paths"
+          fi
+          export CI_FORCE_FULL
+          docker run --rm -i -e CI_EVENT -e CI_FORCE_FULL \
+            -v "$GITHUB_WORKSPACE:/app:ro" -w /app node:26-trixie-slim \
+            node scripts/ci-plan.mjs < "$RUNNER_TEMP/beacon-ci-paths" > "$RUNNER_TEMP/beacon-ci-plan.json"
+          echo "mode=$(jq -r .mode "$RUNNER_TEMP/beacon-ci-plan.json")" >> "$GITHUB_OUTPUT"
+          jq -r .summary "$RUNNER_TEMP/beacon-ci-plan.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Run selected checks in Docker
+        env:
+          CI_MODE: ${{ steps.plan.outputs.mode }}
+        run: sh scripts/ci.sh "$CI_MODE" "$RUNNER_TEMP/beacon-ci-plan.json"
