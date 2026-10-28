@@ -1,4 +1,5 @@
 import {
+  Send,
   ArrowLeft,
   Download,
   ArrowRight,
@@ -34,6 +35,7 @@ import {
 } from "lucide-react";
 
 const icons = {
+  send: Send,
   key: KeyRound,
   info: Info,
   download: Download,

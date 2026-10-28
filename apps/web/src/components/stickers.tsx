@@ -120,18 +120,20 @@ function StickerMetadataEditor({ sticker, close, save, notify }: { sticker: Stic
 
 export function StickerSuggestions({ userId, text, choose }: { userId: string; text: string; choose: (sticker: Sticker) => void }) {
   const { packs } = useStickerCatalog(userId, !!text);
+  const [query, setQuery] = useState("");
+  useEffect(() => { const timer=setTimeout(()=>setQuery(text),200); return()=>clearTimeout(timer); }, [text]);
   const all = useMemo(() => packs.filter(pack => pack.active).flatMap(pack => pack.stickers), [packs]);
   const search = useMemo(() => createStickerSearch(all), [all]);
-  const matches = useMemo(() => search(text, recentStickers(userId), 8), [search, text, userId]);
+  const matches = useMemo(() => search(query, recentStickers(userId), 8), [search, query, userId]);
   const [preview, setPreview] = useState<Sticker | null>(null);
   const hold = useRef<ReturnType<typeof setTimeout> | null>(null);
   const held = useRef(false);
   const clearHold = () => { if (hold.current) clearTimeout(hold.current); hold.current = null; };
   useEffect(() => () => clearHold(), []);
   useEffect(() => { setPreview(null); }, [text]);
-  if (!text || !matches.length) return null;
+  if (!text || text !== query || !matches.length) return null;
   return <div className="sticker-suggestions" aria-label="Подходящие стикеры">
-    {matches.map(sticker => <button type="button" key={sticker.id} aria-label={`Предложенный стикер ${sticker.label}`}
+    <div className="sticker-suggestion-items">{matches.map(sticker => <button type="button" key={sticker.id} aria-label={`Предложенный стикер ${sticker.label}`}
       onMouseEnter={() => setPreview(sticker)} onMouseLeave={() => setPreview(null)}
       onFocus={() => setPreview(sticker)} onBlur={() => setPreview(null)}
       onPointerDown={event => { held.current = false; if (event.pointerType !== "mouse") hold.current = setTimeout(() => { held.current = true; setPreview(sticker); }, 450); }}
@@ -139,7 +141,7 @@ export function StickerSuggestions({ userId, text, choose }: { userId: string; t
       onContextMenu={event => event.preventDefault()}
       onClick={() => { if (held.current) { held.current = false; return; } rememberSticker(userId, sticker.id); setPreview(null); choose(sticker); }}>
       <img src={`/media/${sticker.fileId}`} alt={sticker.label} loading="lazy" />
-    </button>)}
+    </button>)}</div>
     {preview && <div className="sticker-suggestion-preview" role="img" aria-label={`Предпросмотр: ${preview.label}`}><img src={`/media/${preview.fileId}`} alt="" /><span>{preview.label}</span></div>}
   </div>;
 }

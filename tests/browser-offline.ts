@@ -57,8 +57,9 @@ try{
  disconnected=true;
  await composer().fill("Черновик без интернета");
  await expect.poll(async()=>(await stats()).drafts).toBe(1);
+ await composer().fill("Свежий черновик перед перезагрузкой");
  await page.reload();
- await expect(composer()).toHaveValue("Черновик без интернета");
+ await expect(composer()).toHaveValue("Свежий черновик перед перезагрузкой");
  await expect(page.getByText("Сообщение 10",{exact:true})).toBeVisible();
  await page.goto(`${base}/chats/${id(4)}`);
  await expect(page.getByText("Сообщение 12",{exact:true})).toBeVisible();

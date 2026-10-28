@@ -22,12 +22,9 @@ export function parseStickerEmojiInput(text: string): string[] {
   return emojis;
 }
 export function stickerSuggestionQuery(text: string): string {
-  const trimmed = text.trimEnd();
-  const matches = Array.from(trimmed.matchAll(emojiRegex()));
-  const last = matches.at(-1);
-  if (last && last.index + last[0].length === trimmed.length) return last[0];
-  const word = trimmed.match(/[\p{L}\p{N}]+$/u)?.[0] ?? "";
-  return word.length >= 2 ? word : "";
+  const value = text.trim();
+  if (singleEmoji.test(value)) return value;
+  return /^[\p{L}\p{N}]{2,}$/u.test(value) ? value : "";
 }
 
 // Used only for validating persisted catalog data, never messages or user profiles.

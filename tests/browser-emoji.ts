@@ -32,7 +32,34 @@ try{
    await route.fulfill({json:data});
   });
   await page.goto(`${base}/chats/${chatId}`);const input=page.getByLabel("Сообщение",{exact:true}),open=page.getByRole("button",{name:"Добавить эмодзи",exact:true});
-  await input.fill("Привет мир");await input.evaluate((node:HTMLTextAreaElement)=>node.setSelectionRange(7,7));await open.click();
+  const voice=page.getByRole("button",{name:"Записать голосовое сообщение",exact:true});
+  const send=page.getByRole("button",{name:"Отправить сообщение",exact:true});
+  await expect(voice).toBeVisible();
+  if(width<780){
+   await expect(send).toHaveCount(0);
+   const attach=page.getByLabel("Прикрепить",{exact:true});
+   await attach.click();await expect(page.getByRole("button",{name:"Фото",exact:true})).toBeVisible();
+   await expect(page.getByRole("button",{name:"Стикер",exact:true})).toBeVisible();await attach.click();
+   const controls=[attach,input,open,page.getByRole("button",{name:"Записать видеокружок",exact:true}),voice];
+   const bounds=await Promise.all(controls.map(control=>control.boundingBox()));
+   for(let index=1;index<bounds.length;index++){assert.ok(bounds[index]&&bounds[index-1]&&bounds[index]!.x>=bounds[index-1]!.x+bounds[index-1]!.width-1,"mobile controls appear left to right");assert.ok(Math.abs(bounds[index]!.y-bounds[0]!.y)<15,"mobile composer fits one line");}
+   assert.equal(await voice.evaluate(node=>getComputedStyle(node).color),"rgb(255, 255, 255)");
+   assert.equal(await voice.evaluate(node=>getComputedStyle(node).backgroundColor),"rgb(52, 87, 213)");
+   await input.fill("   ");await expect(voice).toBeVisible();await expect(send).toHaveCount(0);
+  }else{await expect(send).toBeVisible();}
+  await input.focus();
+  assert.equal(await input.evaluate(node=>getComputedStyle(node).outlineStyle),"none","composer does not draw a browser focus rectangle");
+  await input.fill("Привет мир");await expect(send.locator("svg")).toBeVisible();
+  if(width<780){
+   await expect(page.getByLabel("Прикрепить",{exact:true})).toBeHidden();
+   await expect(page.getByRole("button",{name:"Записать видеокружок",exact:true})).toBeHidden();
+   const emojiBounds=await open.boundingBox(), inputBounds=await input.boundingBox(), sendBounds=await send.boundingBox();
+   assert.ok(emojiBounds&&inputBounds&&sendBounds&&emojiBounds.x+emojiBounds.width<=inputBounds.x&&inputBounds.x+inputBounds.width<=sendBounds.x,"typing places emoji left of the spacious input and send at right");
+   assert.equal(sendBounds?.width,40);
+   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-composer-typing-${width}.png`});
+   assert.equal(await send.evaluate(node=>getComputedStyle(node).backgroundColor),"rgb(52, 87, 213)");
+  }
+  await expect(send.locator("img")).toHaveCount(0);if(width<780){await expect(voice).toHaveCount(0);await expect(send).toBeVisible();}await input.evaluate((node:HTMLTextAreaElement)=>node.setSelectionRange(7,7));await open.click();
   const menu=page.getByRole("dialog",{name:"Эмодзи",exact:true}),search=menu.getByRole("textbox",{name:"Поиск эмодзи",exact:true});
   await expect(search).toBeVisible();await search.fill("улыбка");const grin=menu.locator('[data-epr-unified="1f600"]').first();await expect(grin).toBeVisible();await grin.click();
   await expect(input).toHaveValue("Привет 😀мир");await grin.click();await expect(input).toHaveValue("Привет 😀😀мир");assert.equal(sent.length,0,"selection never sends a message");
@@ -43,7 +70,7 @@ try{
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`no overflow at ${width}`);
   const bounds=await menu.boundingBox();assert.ok(bounds&&bounds.x>=0&&bounds.x+bounds.width<=width+1&&bounds.y>=0&&bounds.y+bounds.height<=901,"panel stays within viewport");
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-emoji-${width}.png`});
-  await menu.getByRole("button",{name:"Закрыть",exact:true}).click();await page.getByRole("button",{name:"Отправить сообщение",exact:true}).click();await expect.poll(()=>sent.length).toBe(1);assert.equal(sent[0].text,"Привет 😀мир");
+  await menu.getByRole("button",{name:"Закрыть",exact:true}).click();await page.getByRole("button",{name:"Отправить сообщение",exact:true}).click();await expect.poll(()=>sent.length).toBe(1);assert.equal(sent[0].text,"Привет 😀мир");if(width<780){await expect(voice).toBeVisible();await expect(send).toHaveCount(0);await expect(page.getByLabel("Прикрепить",{exact:true})).toBeVisible();await expect(page.getByRole("button",{name:"Записать видеокружок",exact:true})).toBeVisible();}
   await open.click();await expect(menu.getByRole("rowgroup",{name:"Недавно использованные",exact:true})).toBeVisible();await page.keyboard.press("Escape");
   await page.reload();await page.getByRole("button",{name:"Добавить эмодзи",exact:true}).click();await expect(menu.getByRole("rowgroup",{name:"Недавно использованные",exact:true})).toBeVisible();await page.keyboard.press("Escape");
   current={...me,id:id(4)};await page.reload();await page.getByRole("button",{name:"Добавить эмодзи",exact:true}).click();await expect(menu.getByRole("textbox",{name:"Поиск эмодзи",exact:true})).toBeVisible();await expect(menu.getByRole("rowgroup",{name:"Недавно использованные",exact:true})).toHaveCount(0);
