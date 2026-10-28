@@ -1,3 +1,5 @@
+import { rememberRead, acknowledgeRead, storageProblem } from "../offline";
+import { Icon } from "./icon";
 import { useCallback, useEffect, useRef, useState, type RefObject, type ReactNode } from "react";
 import { deliveryLabel, type Chat, type ChatActivity, type Mention, type Message, type Receipt, type User } from "@beacon/shared";
 import type { Socket } from "socket.io-client";
@@ -51,7 +53,7 @@ export function useChatFeatures(userId: string | undefined, selected: string | n
       const message=candidate;candidate=undefined;
       if((read.current.get(selected)??"")>=message.createdAt)return;
       sending=true;
-      try{await api(`chats/${selected}/read`,"POST",{messageId:message.id});if(live){read.current.set(selected,message.createdAt);await refreshLists();}}
+      try{await rememberRead(userId,selected,message).catch(storageProblem);await api(`chats/${selected}/read`,"POST",{messageId:message.id});await acknowledgeRead(userId,selected,message.id);window.dispatchEvent(new CustomEvent("beacon:read-synced",{detail:{chatId:selected}}));if(live){read.current.set(selected,message.createdAt);await refreshLists();}}
       catch{/* A later visibility event or refresh retries. */}
       finally{sending=false;if(live&&candidate)void flush();}
     };
@@ -89,7 +91,10 @@ export function useChatFeatures(userId: string | undefined, selected: string | n
 export function DeliveryStatus({receipts,message,open}:{receipts:Receipt[];message:Message;open?:()=>void}) {
   const label=deliveryLabel(receipts,message.authorId,message.createdAt);
   const details=receipts.filter(r=>r.userId!==message.authorId&&r.joinedAt<=message.createdAt).map(r=>`${r.name}: ${r.readAt>=message.createdAt?"Прочитано":r.deliveredAt>=message.createdAt?"Доставлено":"Отправлено"}`).join("\n");
-  return <button type="button" className={`delivery-status ${label.startsWith("Прочитано")?"read":""}`} title={details||label} aria-label={label} onClick={open}>{label}</button>;
+  // In groups, blue means everyone has read; partial receipts stay grey.
+  const state=label==="Прочитано"?"read":label.startsWith("Прочитано")||label.startsWith("Доставлено")?"delivered":"sent";
+  if(state==="sent")return null;
+  return <button type="button" className={`delivery-status ${state}`} data-state={state} title={details||label} aria-label={label} onClick={open}><Icon name={state==="read"?"checks":"check"}/></button>;
 }
 export function MentionText({text,mentions=[],userId,open}:{text:string;mentions?:Mention[];userId?:string;open?:(id:string)=>void}) {
   const result:ReactNode[]=[];let offset=0;

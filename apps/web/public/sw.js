@@ -4,7 +4,7 @@ const CACHE = SHELL ? 'beacon-shell-' + SHELL.version : 'beacon-shell-dev-v4';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clientVersions = new Map();
 const shellPaths = new Set(SHELL ? SHELL.urls : ['/offline.html', '/icon-192.png']);
-const isAppPage = path => ['/', '/index.html', '/profile', '/settings', '/settings/profile', '/settings/security', '/settings/notifications', '/settings/about', '/people', '/admin', '/admin/stickers', '/admin/users', '/admin/groups', '/admin/chats', '/consent'].includes(path)
+const isAppPage = path => ['/', '/index.html', '/profile', '/settings', '/settings/profile', '/settings/security', '/settings/notifications', '/settings/data', '/settings/about', '/settings/stickers', '/people', '/admin', '/admin/stickers', '/admin/users', '/admin/groups', '/admin/chats', '/consent'].includes(path)
   || (path.startsWith('/chats/') && uuid.test(path.slice(7)));
 async function cleanOldCaches() {
   const windows = await self.clients.matchAll({type:'window', includeUncontrolled:true});
@@ -96,7 +96,7 @@ self.addEventListener('notificationclick', event => {
     const windows = await self.clients.matchAll({type:'window',includeUncontrolled:true});
     const client = windows.find(window => {
       const url = new URL(window.url);
-      return url.origin === self.location.origin && (['/', '/profile', '/settings', '/settings/profile', '/settings/security', '/settings/notifications', '/settings/about', '/people', '/admin', '/admin/stickers', '/admin/users', '/admin/groups', '/admin/chats'].includes(url.pathname) || url.pathname.startsWith('/chats/'));
+      return url.origin === self.location.origin && (['/', '/profile', '/settings', '/settings/profile', '/settings/security', '/settings/notifications', '/settings/data', '/settings/about', '/settings/stickers', '/people', '/admin', '/admin/stickers', '/admin/users', '/admin/groups', '/admin/chats'].includes(url.pathname) || url.pathname.startsWith('/chats/'));
     });
     if (client) {
       await client.focus();

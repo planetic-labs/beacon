@@ -7,7 +7,7 @@ type Renderer = (content: Record<string, unknown>, text: ReactNode, photo?: (ind
 // packages/shared/src/messages.ts. Membership, delivery and reactions remain shared.
 const renderers: Record<string, Renderer> = {
   deleted: () => <span className="deleted-message">Сообщение удалено</span>,
-  file: (content,text) => <FileMessage content={content} caption={text}/>,
+  file: (content,text,photo) => <FileMessage content={content} caption={text} photo={photo}/>,
   video: (content,text) => <>{String(content.mime).startsWith("video/")&&<video className="message-video" controls playsInline preload="none" src={`/media/${content.fileId}`} aria-label={String(content.name??"Видео")} />}<FileMessage content={content} caption={text}/></>,
   audio: content => <audio className="message-audio" controls preload="metadata" src={`/media/${content.fileId}`} aria-label="Голосовое сообщение" />,
   circle: content => <CirclePlayer src={`/media/${content.fileId}`} duration={Number(content.duration ?? 0)} />,
@@ -19,6 +19,10 @@ const renderers: Record<string, Renderer> = {
   text: (_content, text) => text,
 };
 export function renderMessage(type: string, content: Record<string, unknown>, userId?:string, open?:(id:string)=>void, photo?:(index:number)=>void) {
+  if(!navigator.onLine&&!["text","deleted"].includes(type)) {
+    const labels:Record<string,string>={photo:"Фото",video:"Видео",file:"Файл",audio:"Голосовое сообщение",circle:"Видеокружок",sticker:"Стикер"};
+    return <span>{content.text?`${String(content.text)} · `:""}{labels[type]??"Вложение"} доступно с интернетом</span>;
+  }
   return (
     renderers[type]?.(content, <MentionText text={String(content.text??"")} mentions={content.mentions as Mention[]|undefined} userId={userId} open={open}/>, photo) ?? "Этот тип сообщения пока не поддерживается"
   );
@@ -45,6 +49,8 @@ export function CirclePlayer({ src, duration = 0 }: { src: string; duration?: nu
   </span>;
 }
 
-function FileMessage({content,caption}:{content:Record<string,unknown>;caption:ReactNode}) {
-  return <span className="message-file"><a href={`/media/${content.fileId}?download=1`} download><Icon name="file"/><span><strong>{String(content.name??"Файл")}</strong><small>{fileSize(Number(content.size??0))} · Скачать</small></span></a>{content.text?<span>{caption}</span>:null}</span>;
+function FileMessage({content,caption,photo}:{content:Record<string,unknown>;caption:ReactNode;photo?:(index:number)=>void}) {
+  const [failed,setFailed]=useState(false);
+  const image=["image/jpeg","image/png","image/webp"].includes(String(content.mime));
+  return <span className="message-file">{image&&!failed&&<button type="button" className="message-photo-open" aria-label="Открыть фото" onClick={()=>photo?.(0)}><img className="message-photo" src={`/media/${content.fileId}?thumbnail=1`} alt={String(content.name??"Фото")} loading="lazy" onError={()=>setFailed(true)}/></button>}<a href={`/media/${content.fileId}?download=1`} download><Icon name="file"/><span><strong>{String(content.name??"Файл")}</strong><small>{fileSize(Number(content.size??0))} · Скачать</small></span></a>{content.text?<span>{caption}</span>:null}</span>;
 }

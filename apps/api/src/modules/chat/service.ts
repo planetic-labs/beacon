@@ -1,5 +1,5 @@
 import { validateMentions } from "./mentions";
-import type { Mention } from "@beacon/shared";
+import type { Mention, AttachmentMime } from "@beacon/shared";
 import { sql } from "drizzle-orm";
 import { db } from "../../db";
 import { HttpError } from "../../lib/http";
@@ -97,6 +97,7 @@ export async function chatList(u: Actor) {
  case when c.kind='direct' then (select image from "user" u2 join chat_member m2 on m2.user_id=u2.id where m2.chat_id=c.id and u2.id<>${u.id} limit 1) else c.image end as avatar,
  case when last_msg.type in ('file','video') then coalesce(nullif(last_msg.content->>'text',''),case when last_msg.type='video' then 'Видео: ' else 'Файл: ' end || (last_msg.content->>'name')) when last_msg.type='sticker' then 'Стикер: ' || (last_msg.content->>'text') else coalesce(nullif(last_msg.content->>'text',''),case when last_msg.type='photo' then 'Фото' end) end as preview,last_msg.id as "lastMessageId",last_msg.created_at as "lastAt",
  (select count(*)::int from message msg where msg.chat_id=c.id and msg.author_id<>${u.id} and msg.deleted_at is null and msg.created_at>m.last_read_at) as unread,
+ (select msg.id from message msg where msg.chat_id=c.id and msg.author_id<>${u.id} and msg.deleted_at is null and msg.created_at>m.last_read_at order by msg.created_at desc,msg.id desc limit 1) as "lastUnreadMessageId",
  (select count(*)::int from message msg where msg.chat_id=c.id and msg.author_id<>${u.id} and msg.deleted_at is null and msg.created_at>m.last_read_at and msg.forwarded_from is null and msg.content->'mentions' @> ${JSON.stringify([{userId:u.id}])}::jsonb) as "unreadMentions"
  from chat c join chat_member m on m.chat_id=c.id and m.user_id=${u.id}
  left join lateral(select id,type,content,created_at from message where chat_id=c.id and deleted_at is null order by created_at desc,id desc limit 1) last_msg on true
@@ -109,8 +110,10 @@ export async function history(
   after = false,
   inclusive = false,
   throughId?: string,
+  window?: { readAt: string; read: boolean; limit: number },
 ) {
   await member(chatId, u);
+  const limit=window?.limit??50;
   let bound = sql``;
   if (cursor)
     bound = after
@@ -122,11 +125,23 @@ export async function history(
     await rows(sql`select m.id,m.chat_id as "chatId",m.author_id as "authorId",m.client_message_id as "clientMessageId",m.type,m.content,to_char(m.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "createdAt",m.edited_at as "editedAt",m.deleted_at as "deletedAt",exists(select 1 from pinned_message pm where pm.message_id=m.id) as pinned,m.reply_to_id as "replyToId",m.forwarded_from as "forwardedFrom",u.name as "authorName",u.image as "authorImage",
    (select json_build_object('id',r.id,'text',coalesce(nullif(r.content->>'text',''),case when r.type='photo' then 'Фото' end),'authorName',ru.name) from message r join "user" ru on ru.id=r.author_id where r.id=m.reply_to_id and r.chat_id=m.chat_id) as reply,
    coalesce((select json_agg(json_build_object('userId',r.user_id,'name',ur.name,'emoji',r.emoji)) from reaction r join "user" ur on ur.id=r.user_id where r.message_id=m.id),'[]'::json) as reactions
-   from message m join "user" u on u.id=m.author_id where m.chat_id=${chatId} and exists(select 1 from chat_member cm where cm.chat_id=m.chat_id and cm.user_id=${u.id}) ${bound} ${throughId ? sql`and (m.created_at,m.id)<=(select created_at,id from message where id=${throughId} and chat_id=${chatId})` : sql``} order by m.created_at ${after ? sql`asc` : sql`desc`},m.id ${after ? sql`asc` : sql`desc`} limit 51`);
+   from message m join "user" u on u.id=m.author_id where m.chat_id=${chatId} ${window ? (window.read ? sql`and m.created_at<=${window.readAt}::timestamptz` : sql`and m.created_at>${window.readAt}::timestamptz`) : sql``} and exists(select 1 from chat_member cm where cm.chat_id=m.chat_id and cm.user_id=${u.id}) ${bound} ${throughId ? sql`and (m.created_at,m.id)<=(select created_at,id from message where id=${throughId} and chat_id=${chatId})` : sql``} order by m.created_at ${after ? sql`asc` : sql`desc`},m.id ${after ? sql`asc` : sql`desc`} limit ${limit+1}`);
   return {
-    messages: after ? result.slice(0, 50) : result.slice(0, 50).reverse(),
-    hasMore: result.length > 50,
+    messages: after ? result.slice(0, limit) : result.slice(0, limit).reverse(),
+    hasMore: result.length > limit,
   };
+}
+// One bounded, authoritative device snapshot. The read boundary is captured once
+// so concurrent read receipts cannot introduce a gap between the two windows.
+export async function offlineHistory(chatId:string,u:Actor) {
+  await member(chatId,u);
+  const [state]=await rows<{readAt:string}>(sql`select to_char(last_read_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "readAt" from chat_member where chat_id=${chatId} and user_id=${u.id}`);
+  if(!state)throw new HttpError(403,"Нет доступа к чату");
+  const [read,unread]=await Promise.all([
+    history(chatId,u,undefined,false,false,undefined,{readAt:state.readAt,read:true,limit:100}),
+    history(chatId,u,undefined,false,false,undefined,{readAt:state.readAt,read:false,limit:1000}),
+  ]);
+  return {messages:[...read.messages,...unread.messages],hasMoreRead:read.hasMore,hasMoreUnread:unread.hasMore,unreadStartId:unread.messages[0]?.id};
 }
 export async function send(
   u: Actor,
@@ -138,7 +153,7 @@ export async function send(
     replyToId?: string;
     forwardId?: string;
     stickerId?: string;
-    attachment?: { id: string; name: string; size: number; mime: "application/octet-stream" | "video/mp4" | "video/webm"; kind: "file" | "video" };
+    attachment?: { id: string; name: string; size: number; mime: AttachmentMime; kind: "file" | "video" };
     recording?: { id: string; mime: string; size: number; kind: "audio" | "circle"; duration: number };
     photos?: { id: string; mime: string; size: number }[];
   },

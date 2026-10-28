@@ -21,6 +21,8 @@ const settings = createRoute({ getParentRoute: () => app, path: "/settings" });
 const settingsProfile = createRoute({ getParentRoute: () => app, path: "/settings/profile" });
 const settingsSecurity = createRoute({ getParentRoute: () => app, path: "/settings/security" });
 const settingsNotifications = createRoute({ getParentRoute: () => app, path: "/settings/notifications" });
+const settingsStickers = createRoute({ getParentRoute: () => app, path: "/settings/stickers" });
+const settingsData = createRoute({ getParentRoute: () => app, path: "/settings/data" });
 const settingsAbout = createRoute({ getParentRoute: () => app, path: "/settings/about" });
 const admin = createRoute({ getParentRoute: () => app, path: "/admin" });
 const adminStickers = createRoute({ getParentRoute: () => app, path: "/admin/stickers" });
@@ -29,7 +31,7 @@ const adminGroups = createRoute({ getParentRoute: () => app, path: "/admin/group
 const adminChats = createRoute({ getParentRoute: () => app, path: "/admin/chats" });
 const consent = createRoute({ getParentRoute: () => root, path: "/consent", component: Consent });
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([index, chat, people, profile, settings, settingsProfile, settingsSecurity, settingsNotifications, settingsAbout, admin, adminStickers, adminUsers, adminGroups, adminChats]), consent]),
+  routeTree: root.addChildren([app.addChildren([index, chat, people, profile, settings, settingsProfile, settingsSecurity, settingsNotifications, settingsStickers, settingsData, settingsAbout, admin, adminStickers, adminUsers, adminGroups, adminChats]), consent]),
   defaultPreload: "intent",
 });
 declare module "@tanstack/react-router" {

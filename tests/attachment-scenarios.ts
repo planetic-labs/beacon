@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import { v7 } from "uuid";
 import { sql } from "drizzle-orm";
@@ -44,4 +45,37 @@ export async function attachmentScenarios(http:(request:Request)=>Promise<Respon
  const videoMedia=await http(new Request(`${base}/media/${videoMessage.content.fileId}`,{headers:{cookie:two}}));assert.match(videoMedia.headers.get("content-disposition")!,/^inline;/);await videoMedia.arrayBuffer();
  const download=await http(new Request(`${base}/media/${videoMessage.content.fileId}?download=1`,{headers:{cookie:two}}));assert.match(download.headers.get("content-disposition")!,/^attachment;/);await download.arrayBuffer();
  assert.equal((await upload(one,"file","empty.zip",new Uint8Array())).status,400);
+ // Image files keep their original bytes, but become viewable photos regardless of filename or client MIME.
+ const sharp=createRequire(new URL("../apps/api/package.json",import.meta.url))("sharp");
+ const imageBytes=await sharp({create:{width:64,height:48,channels:4,background:"blue"}}).png().toBuffer();
+ const imageUpload=await upload(one,"file","original.bin",imageBytes);assert.equal(imageUpload.status,200,await imageUpload.clone().text());
+ const imageMessageId=(await imageUpload.json()).id;
+ const imageHistory=await(await call(`chats/${chatId}/messages`,"GET",undefined,two)).json();
+ const imageMessage=imageHistory.messages.find((m:{id:string})=>m.id===imageMessageId);
+ assert.equal(imageMessage.type,"file");assert.equal(imageMessage.content.mime,"image/png");
+ const imageFileId=imageMessage.content.fileId;
+ const original=await http(new Request(`${base}/media/${imageFileId}`,{headers:{cookie:two}}));
+ assert.equal(original.headers.get("content-type"),"image/png");assert.match(original.headers.get("content-disposition")!,/^inline;/);
+ assert.deepEqual(Buffer.from(await original.arrayBuffer()),imageBytes,"image originals are never recompressed");
+ const downloaded=await http(new Request(`${base}/media/${imageFileId}?download=1`,{headers:{cookie:two}}));
+ assert.match(downloaded.headers.get("content-disposition")!,/^attachment;/);assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()),imageBytes);
+ const imagePreview=await http(new Request(`${base}/media/${imageFileId}?thumbnail=1`,{headers:{cookie:two}}));
+ assert.equal(imagePreview.status,200);assert.equal(imagePreview.headers.get("content-type"),"image/webp");await imagePreview.arrayBuffer();
+ assert.equal((await http(new Request(`${base}/media/${imageFileId}?thumbnail=1`,{headers:{cookie:admin}}))).status,404);
+ const imageAlbum=await(await call(`chats/${chatId}/photos/${imageMessageId}`,"GET",undefined,two)).json();
+ assert.equal(imageAlbum.files[0].id,imageFileId);
+ const photos=await(await call(`chats/${chatId}/attachments?kind=photo`,"GET",undefined,two)).json();
+ assert.ok(photos.items.some((item:{messageId:string})=>item.messageId===imageMessageId));
+ const imageForward=await call(`chats/${group}/messages`,"POST",{text:"",clientMessageId:v7(),forwardId:imageMessageId},two);
+ assert.equal(imageForward.status,200);const imageForwardId=(await imageForward.json()).id;
+ const forwardedAlbum=await(await call(`chats/${group}/photos/${imageForwardId}`,"GET",undefined,two)).json();
+ assert.equal(forwardedAlbum.files[0].id,imageFileId,"forwarding an image file reuses its original");
+ const fakeImage=await upload(one,"file","fake.png");assert.equal(fakeImage.status,200);
+ const fakeId=(await fakeImage.json()).id;
+ const fakeHistory=await(await call(`chats/${chatId}/messages`,"GET",undefined,two)).json();
+ const fakeMessage=fakeHistory.messages.find((m:{id:string})=>m.id===fakeId);
+ assert.equal(fakeMessage.content.mime,"application/octet-stream");
+ assert.equal((await call(`chats/${chatId}/photos/${fakeId}`,"GET",undefined,two)).status,404);
+ assert.equal((await http(new Request(`${base}/media/${fakeMessage.content.fileId}?thumbnail=1`,{headers:{cookie:two}}))).status,404);
+
 }

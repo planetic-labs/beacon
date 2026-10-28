@@ -9,7 +9,10 @@ publish images or update any server.
 
 From the repository directory, run `./scripts/release.sh`. It runs directly on
 this machine, without Docker: this is a GitHub administration command, not an
-application build. Install GitHub CLI (`gh`) and sign in with `gh auth login`.
+application build. Use a current GitHub CLI (`gh`) with `gh api --slurp` support
+(verified with 2.103.3), install `jq`, and sign in with `gh auth login`.
+All CodeQL result pages are aggregated by the CLI, then processed with `jq`
+to select the newest trusted result for each analysis. Older CLI versions stop with an update message.
 The command resolves the repository from Git, checks the exact remote `main`
 commit's CI and CodeQL results, and chooses today's version in Europe/Moscow.
 It checks all pages of tags and releases, including standalone tags and drafts,

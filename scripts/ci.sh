@@ -47,11 +47,15 @@ docker build -f Dockerfile.test -t beacon-browser .
 docker run --rm beacon-browser pnpm exec tsx tests/browser-pwa.ts
 # Search, receipt and mention UI use synthetic users on desktop and mobile.
 docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-features.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-message-layout.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-scroll.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-offline.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-attachments.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-community-chats.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-media.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-emoji.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-settings.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-sticker-ownership.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-passkey-registration.ts
 # Native recording UI checks use fake devices and synthetic API responses.
 docker run --rm beacon-browser pnpm exec tsx tests/browser-recordings.ts

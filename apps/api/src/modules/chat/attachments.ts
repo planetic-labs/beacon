@@ -3,10 +3,11 @@ import { member, rows, type Actor } from "./service";
 import { HttpError } from "../../lib/http";
 import { messageLinks, type AttachmentCategory, type AttachmentPage, type PhotoAlbum } from "@beacon/shared";
 const photoIds=(content:Record<string,any>):string[]=>content.fileIds??(content.fileId?[content.fileId]:[]);
+const photoMessage=(alias:string)=>sql`(${sql.identifier(alias)}.type='photo' or (${sql.identifier(alias)}.type='file' and ${sql.identifier(alias)}.content->>'mime' in ('image/jpeg','image/png','image/webp')))`;
 export async function chatAttachments(chatId:string,actor:Actor,kind:AttachmentCategory,cursor?:{id:string;at:string}):Promise<AttachmentPage> {
   await member(chatId,actor);
   const filter=kind==="links"?sql`m.type in ('text','photo','file','video') and (m.content->>'text') ~* 'https?://'`
-    :kind==="video"?sql`m.type in ('video','circle')`:kind==="audio"?sql`m.type='audio'`:sql`m.type=${kind}`;
+    :kind==="photo"?photoMessage("m"):kind==="video"?sql`m.type in ('video','circle')`:kind==="audio"?sql`m.type='audio'`:sql`m.type=${kind}`;
   const messages=await rows(sql`select m.id,m.type,m.content,u.name as "authorName",to_char(m.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "createdAt"
     from message m join "user" u on u.id=m.author_id where m.chat_id=${chatId} and m.deleted_at is null and ${filter}
     and exists(select 1 from chat_member cm where cm.chat_id=m.chat_id and cm.user_id=${actor.id})
@@ -22,9 +23,9 @@ export async function chatAttachments(chatId:string,actor:Actor,kind:AttachmentC
 export async function photoAlbum(chatId:string,messageId:string,actor:Actor):Promise<PhotoAlbum> {
   await member(chatId,actor);
   const [message]=await rows(sql`select m.id,m.content,u.name as "authorName",to_char(m.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "createdAt",
-    (select id from message p where p.chat_id=m.chat_id and p.type='photo' and p.deleted_at is null and (p.created_at,p.id)<(m.created_at,m.id) order by p.created_at desc,p.id desc limit 1) as "previousMessageId",
-    (select id from message n where n.chat_id=m.chat_id and n.type='photo' and n.deleted_at is null and (n.created_at,n.id)>(m.created_at,m.id) order by n.created_at,n.id limit 1) as "nextMessageId"
-    from message m join "user" u on u.id=m.author_id where m.id=${messageId} and m.chat_id=${chatId} and m.type='photo' and m.deleted_at is null
+    (select id from message p where p.chat_id=m.chat_id and ${photoMessage("p")} and p.deleted_at is null and (p.created_at,p.id)<(m.created_at,m.id) order by p.created_at desc,p.id desc limit 1) as "previousMessageId",
+    (select id from message n where n.chat_id=m.chat_id and ${photoMessage("n")} and n.deleted_at is null and (n.created_at,n.id)>(m.created_at,m.id) order by n.created_at,n.id limit 1) as "nextMessageId"
+    from message m join "user" u on u.id=m.author_id where m.id=${messageId} and m.chat_id=${chatId} and ${photoMessage("m")} and m.deleted_at is null
     and exists(select 1 from chat_member cm where cm.chat_id=m.chat_id and cm.user_id=${actor.id})`);
   if(!message)throw new HttpError(404,"Фото больше недоступно");
   const ids=photoIds(message.content);

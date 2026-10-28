@@ -415,10 +415,12 @@ export const oauthClientAssertion = pgTable("oauth_client_assertion", {
 
 export const stickerPacks = pgTable("sticker_pack", {
   id: id(),
+  ownerId: uuid("owner_id").references(() => user.id),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   name: text("name").notNull(),
   active: boolean("active").notNull().default(true),
   createdAt: time("created_at"),
-});
+}, t => [index("sticker_pack_owner_idx").on(t.ownerId)]);
 export const stickers = pgTable("sticker", {
   id: id(),
   packId: uuid("pack_id").notNull().references(() => stickerPacks.id),

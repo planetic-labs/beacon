@@ -1,3 +1,5 @@
+import { cachedResponse, localAccount, localGeneration, acceptAccount, writeCache, reconcileChats, forgetAccount } from "../offline";
+import type { User, Chat } from "@beacon/shared";
 import { useState, useEffect, useRef, type ReactNode } from "react";
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -8,7 +10,9 @@ export async function api<T = any>(
   path: string,
   method = "GET",
   data?: unknown,
+  networkOnly = false,
 ): Promise<T> {
+  const owner=localAccount(), generation=localGeneration();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
@@ -21,11 +25,25 @@ export async function api<T = any>(
     });
     const body = await response.json();
     if (!response.ok) {
-      if (response.status === 401)
+      if (response.status === 401 && generation===localGeneration()) {
+        void forgetAccount();
         window.dispatchEvent(new Event("beacon:unauthorized"));
+      }
       throw new ApiError(body.error ?? "Не удалось выполнить запрос", response.status);
     }
+    if (generation!==localGeneration()) throw new DOMException("Account changed", "AbortError");
+    if(method==="GET") {
+      if(path==="me") await acceptAccount(body as User);
+      else if(path==="chats") await reconcileChats(body as Chat[],owner);
+      else if(path==="users") await writeCache(path,body,owner);
+    }
     return body;
+  } catch(error) {
+    if(method==="GET"&&!networkOnly&&!(error instanceof ApiError)&&generation===localGeneration()) {
+      const cached=await cachedResponse(path);
+      if(cached!==undefined)return cached as T;
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
