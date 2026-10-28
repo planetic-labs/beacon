@@ -66,9 +66,6 @@ jobs:
         with:
           ref: ${{ needs.validate.outputs.revision }}
           persist-credentials: false
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        with:
-          platforms: arm64
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Authenticate to GitHub Container Registry
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
@@ -96,7 +93,7 @@ jobs:
         with:
           context: .
           target: production
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ needs.validate.outputs.image }}:${{ needs.validate.outputs.tag }}
           build-args: |
@@ -156,7 +153,7 @@ jobs:
             const {IMAGE:image, TAG:tag, VERSION:version, REVISION:revision, DIGEST:digest} = process.env;
             if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error('Missing image digest');
             const reference = `${image}@${digest}`;
-            const data = Buffer.from(JSON.stringify({image, tag, version, revision, digest, reference, platforms:['linux/amd64','linux/arm64']}, null, 2) + '\n');
+            const data = Buffer.from(JSON.stringify({image, tag, version, revision, digest, reference, platforms:['linux/amd64']}, null, 2) + '\n');
             const release_id = context.payload.release.id;
             const assets = await github.paginate(github.rest.repos.listReleaseAssets, {...context.repo, release_id, per_page:100});
             if (!assets.some(asset => asset.name === 'beacon-image.json')) {
