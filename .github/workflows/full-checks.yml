@@ -1,0 +1,43 @@
+name: Full validation
+
+on:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      version:
+        default: ''
+        type: string
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Exact commit SHA (empty means selected workflow revision)
+        default: ''
+        type: string
+      version:
+        description: Optional release version
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  full:
+    name: Full checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          persist-credentials: false
+      - name: Verify exact revision
+        env:
+          EXPECTED_REVISION: ${{ inputs.revision || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_REVISION"
+      - name: Build, audit and test in Docker
+        env:
+          CI_RELEASE_VERSION: ${{ inputs.version }}
+        run: sh scripts/ci.sh full
