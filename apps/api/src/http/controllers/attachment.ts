@@ -4,10 +4,10 @@ import { Transform } from "node:stream";
 import { v7 } from "uuid";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
-import { attachmentLimits, attachmentName, mentionsSchema } from "@beacon/shared";
+import { attachmentLimits, attachmentName, mentionsSchema, type AttachmentMime } from "@beacon/shared";
 import { actor, checkOrigin, HttpError } from "../../lib/http";
 import { member, rows, send } from "../../modules/chat/service";
-import { storage } from "../../modules/media/storage";
+import { storage, imageMime } from "../../modules/media/storage";
 const metadata = z.object({ chatId:z.uuid(), clientMessageId:z.uuid(), kind:z.enum(["file","video"]), text:z.string().max(10000).default(""), replyToId:z.uuid().optional(), mentions:mentionsSchema.optional() });
 // Detect only browser-playable container MIME; everything else is a download.
 function containerMime(header:Buffer): "video/mp4" | "video/webm" | "application/octet-stream" {
@@ -38,7 +38,7 @@ export async function attachmentRoutes(app:FastifyInstance) {
     const timeout=setTimeout(()=>request.raw.destroy(new Error("Upload timeout")),20*60*1000);
     try {
       const user=await actor(new Headers({cookie:request.headers.cookie??""}));
-      const fields:Record<string,string>={};let uploaded:{id:string;name:string;size:number;mime:"video/mp4"|"video/webm"|"application/octet-stream"}|undefined;
+      const fields:Record<string,string>={};let uploaded:{id:string;name:string;size:number;mime:AttachmentMime}|undefined;
       let input:z.infer<typeof metadata>|undefined;
       for await(const part of request.parts()){
         if(part.type==="field"){
@@ -64,7 +64,7 @@ export async function attachmentRoutes(app:FastifyInstance) {
         await pipeline(part.file,bounded,async source=>storage.saveStream(id,source));
         if(part.file.truncated)throw new HttpError(413,"Файл превышает допустимый размер");
         if(!size)throw new HttpError(400,"Файл пустой");
-        uploaded={id,name:attachmentName(part.filename),size,mime:input.kind==="video"?containerMime(header):"application/octet-stream"};
+        uploaded={id,name:attachmentName(part.filename),size,mime:input.kind==="video"?containerMime(header):imageMime(header)??"application/octet-stream"};
       }
       if(!input||!uploaded)throw new HttpError(400,"Выберите файл");
       const result=await send(user,input.chatId,{...input,attachment:{...uploaded,kind:input.kind}});

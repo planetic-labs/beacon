@@ -21,6 +21,7 @@ import {
   createChat,
   chatList,
   history,
+  offlineHistory,
   send,
 } from "@api/modules/chat/service";
 import { emojiSchema, messageTypes } from "@api/modules/chat/types";
@@ -120,6 +121,7 @@ async function handler(
         const input=z.object({messages:z.array(z.object({forwardId:uuid,clientMessageId:uuid})).min(1).max(100)}).parse(data);
         return ok(await forwardBatch(u,chatId,input.messages));
       }
+      if(p[2]==="offline"&&method==="GET")return ok(await offlineHistory(chatId,u));
       if (p[2] === "messages") {
         if (method === "GET") {
           const q = new URL(request.url).searchParams;

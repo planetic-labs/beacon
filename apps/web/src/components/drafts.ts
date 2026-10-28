@@ -1,3 +1,4 @@
+import { localDrafts, saveDraft, storageProblem } from "../offline";
 import { useEffect, useRef, type RefObject } from "react";
 import type { Socket } from "socket.io-client";
 import type { Mention } from "@beacon/shared";
@@ -11,9 +12,24 @@ export function useDraftSync(userId:string|undefined,socket:RefObject<Socket|nul
   useEffect(()=>{
     if(!userId)return;
     let live=true,ready=false,running=false,refreshing=false;
-    const revisions=new Map<string,number>(),dirty=new Map<string,Value>();
+    const revisions=new Map<string,number>(),dirty=new Map<string,Value>(),legacy=new Map<string,Value>();
     const storageKey=`beacon:unsynced-drafts:${userId}`;
-    try{const saved=JSON.parse(sessionStorage.getItem(storageKey)??"[]");if(Array.isArray(saved))for(const [id,value] of saved){if(typeof id==="string"&&value&&typeof value.text==="string"&&Array.isArray(value.mentions)){dirty.set(id,value);callbacks.current.apply(id,value);}}}catch{/* Storage may be unavailable. */}
+    try{const saved=JSON.parse(sessionStorage.getItem(storageKey)??"[]");if(Array.isArray(saved))for(const [id,value] of saved){if(typeof id==="string"&&value&&typeof value.text==="string"&&Array.isArray(value.mentions)){legacy.set(id,value);}}}catch{/* Storage may be unavailable. */}
+    const restored=localDrafts(userId).then(rows=>{
+      if(!live)return;
+      for(const row of rows){
+        if(dirty.has(row.chatId))continue;
+        const value={text:row.text,mentions:row.mentions};
+        if(row.dirty)dirty.set(row.chatId,value);
+        callbacks.current.apply(row.chatId,value);
+      }
+      const known=new Set(rows.map(row=>row.chatId));
+      for(const [id,value] of legacy)if(!known.has(id)&&!dirty.has(id)){
+        dirty.set(id,value);callbacks.current.apply(id,value);
+        void saveDraft(userId,id,value).catch(storageProblem);
+      }
+      try{sessionStorage.removeItem(storageKey);}catch{/* Legacy storage may be blocked. */}
+    }).catch(storageProblem);
     const persist=()=>{try{if(dirty.size)sessionStorage.setItem(storageKey,JSON.stringify([...dirty]));else sessionStorage.removeItem(storageKey);}catch{/* The server copy remains primary. */}};
     let timer:ReturnType<typeof setTimeout>|undefined;
     const refresh=async()=>{
@@ -26,7 +42,10 @@ export function useDraftSync(userId:string|undefined,socket:RefObject<Socket|nul
           // Never overwrite a revision received after this request began.
           if(row.revision<(revisions.get(row.chatId)??0))continue;
           revisions.set(row.chatId,row.revision);
-          if(!dirty.has(row.chatId))callbacks.current.apply(row.chatId,row.draft);
+          if(!dirty.has(row.chatId)){
+            callbacks.current.apply(row.chatId,row.draft);
+            void saveDraft(userId,row.chatId,row.draft,false).catch(storageProblem);
+          }
         }
         ready=true;
       }catch{/* Retry on reconnect, visibility or the periodic recovery. */}
@@ -42,7 +61,10 @@ export function useDraftSync(userId:string|undefined,socket:RefObject<Socket|nul
             const row=await api<Row>(`chats/${id}/draft`,"PATCH",{...value,revision:revisions.get(id)??0});
             if(!live)return;
             revisions.set(id,row.revision);
-            if(dirty.get(id)===value)dirty.delete(id);
+            if(dirty.get(id)===value){
+              dirty.delete(id);
+              void saveDraft(userId,id,value,false).catch(storageProblem);
+            }
           }catch(error){
             if(error instanceof ApiError&&error.status===409){await refresh();break;}
             if(error instanceof ApiError&&(error.status===403||error.status===404))dirty.delete(id);
@@ -51,14 +73,14 @@ export function useDraftSync(userId:string|undefined,socket:RefObject<Socket|nul
         }
       }finally{if(live)persist();running=false;if(live&&dirty.size)timer=setTimeout(()=>void flush(),1500);}
     };
-    controller.current={change:(id,value)=>{dirty.set(id,value);persist();clearTimeout(timer);timer=setTimeout(()=>void flush(),600);}};
-    const sync=()=>{void refresh().then(()=>{if(dirty.size)void flush();});};
+    controller.current={change:(id,value)=>{dirty.set(id,value);void saveDraft(userId,id,value).catch(storageProblem);persist();clearTimeout(timer);timer=setTimeout(()=>void flush(),600);}};
+    const sync=()=>{void restored.then(()=>{if(live)return refresh();}).then(()=>{if(live&&dirty.size)void flush();});};
     const visible=()=>{if(!document.hidden)sync();};
     const hide=()=>{if(document.hidden)void flush();};
     const s=socket.current;
     s?.on("connect",sync);s?.on("sync",sync);s?.on("draft.changed",sync);
     window.addEventListener("online",sync);document.addEventListener("visibilitychange",visible);document.addEventListener("visibilitychange",hide);
-    sync();const recovery=setInterval(sync,30000);
+    void restored.then(sync);const recovery=setInterval(sync,30000);
     return()=>{live=false;clearTimeout(timer);clearInterval(recovery);s?.off("connect",sync);s?.off("sync",sync);s?.off("draft.changed",sync);window.removeEventListener("online",sync);document.removeEventListener("visibilitychange",visible);document.removeEventListener("visibilitychange",hide);controller.current={change:()=>{}};};
   },[userId,socket,connectionKey]);
   return controller;

@@ -13,7 +13,7 @@ function run({tags=[],releases=[],scenario="",args=[]}:{tags?:string[];releases?
   writeFileSync(join(root,"gh"),`#!/usr/bin/env node
 const fs=require('node:fs');const a=process.argv.slice(2),s=process.env.FAKE_SCENARIO,p=a.find(v=>v.startsWith('repos/'))||'';
 fs.appendFileSync(process.env.FAKE_LOG,JSON.stringify(a)+'\\n');
-if(a.includes('--slurp')){console.error('unknown flag: --slurp');process.exit(2);}
+if(a[0]==='api'&&a.includes('--help')){console.log(s==='old-cli'?'Usage: gh api':'Usage: gh api --slurp');process.exit(0);}
 if(a[0]==='repo'){console.log('example/beacon');process.exit(0);}
 if(a[0]==='release'){
  if(s==='publish-failure')process.exit(1);
@@ -22,12 +22,19 @@ if(a[0]==='release'){
 if(p.endsWith('/branches/main'))console.log('${sha}');
 else if(p.endsWith('/checks.yml/runs'))console.log(s==='ci-pending'?'':'${sha}');
 else if(p.includes('/check-runs?')){
- if(!a.includes('--paginate'))process.exit(4);
- console.log('Analyze (actions)\\t10\\tcompleted\\tsuccess');
- console.log('Analyze (javascript-typescript)\\t20\\tcompleted\\t'+(s==='codeql-failure'?'failure':'success'));
- if(s==='newer-check-failed')console.log('Analyze (actions)\\t30\\tcompleted\\tfailure');
- if(s==='older-check-failed')console.log('Analyze (actions)\\t5\\tcompleted\\tfailure');
- if(s==='later-page-failed')process.exit(1);
+ if(!a.includes('--paginate')||!a.includes('--slurp'))process.exit(4);
+ const check=(name,id,conclusion,app='github-actions',status='completed')=>({name,id,conclusion,status,app:{slug:app}});
+ const pages=[{check_runs:[check('Analyze (actions)',10,'success')]},
+   {check_runs:[check('Analyze (javascript-typescript)',20,s==='codeql-failure'?'failure':'success')]}];
+ if(s==='newer-check-failed')pages[1].check_runs.push(check('Analyze (actions)',30,'failure'));
+ if(s==='older-check-failed')pages[1].check_runs.push(check('Analyze (actions)',5,'failure'));
+ if(s==='newer-check-pending')pages[1].check_runs.push(check('Analyze (actions)',30,null,'github-actions','in_progress'));
+ if(s==='missing-check')pages[1].check_runs=[];
+ if(s==='untrusted-check')pages[1].check_runs[0].app.slug='untrusted-app';
+ if(s==='untrusted-newer-failure')pages[1].check_runs.push(check('Analyze (actions)',30,'failure','untrusted-app'));
+ if(s==='later-page-failed'){console.error('page failed');process.exit(1);}
+ if(a.includes('--jq')||a.includes('--template')){console.error('slurp cannot be combined with projections');process.exit(2);}
+ console.log(JSON.stringify(pages));
 }
 else if(p.includes('/tags?')){
  if(!a.includes('--paginate'))process.exit(4);
@@ -48,8 +55,16 @@ else if(p.endsWith('/git/refs')){
 else if(p.includes('/git/ref/tags/')){if(!fs.existsSync(process.env.FAKE_OCCUPIED))process.exit(1);}
 else process.exit(3);
 `,{mode:0o755});
+  // Use real jq where available; minimal CI uses a fixed projection fixture.
+  const jq=spawnSync("sh",["-c","command -v jq"],{encoding:"utf8"});
+  writeFileSync(join(root,"jq"),`#!/usr/bin/env node
+const a=process.argv.slice(2),cp=require('node:child_process');
+if(process.env.FAKE_REAL_JQ){const r=cp.spawnSync(process.env.FAKE_REAL_JQ,a,{stdio:'inherit'});process.exit(r.status??1);}
+const s=process.env.FAKE_SCENARIO;
+console.log(['codeql-failure','newer-check-failed','newer-check-pending','missing-check','untrusted-check'].includes(s)?1:2);
+`,{mode:0o755});
   writeFileSync(join(root,"date"),"#!/bin/sh\n[ \"$TZ\" = Europe/Moscow ] || exit 1\nprintf '2026.10.27\\n'\n",{mode:0o755});
-  const result=spawnSync("sh",[script,...args],{encoding:"utf8",env:{...process.env,PATH:`${root}:${process.env.PATH}`,FAKE_SCENARIO:scenario,FAKE_TAGS:tags.join("\n"),FAKE_RELEASES:releases.join("\n"),FAKE_LOG:join(root,"calls"),FAKE_OCCUPIED:join(root,"occupied")}});
+  const result=spawnSync("sh",[script,...args],{encoding:"utf8",env:{...process.env,PATH:`${root}:${process.env.PATH}`,FAKE_REAL_JQ:jq.status===0?jq.stdout.trim():"",FAKE_SCENARIO:scenario,FAKE_TAGS:tags.join("\n"),FAKE_RELEASES:releases.join("\n"),FAKE_LOG:join(root,"calls"),FAKE_OCCUPIED:join(root,"occupied")}});
   const calls:string[][]=existsSync(join(root,"calls"))?readFileSync(join(root,"calls"),"utf8").trim().split("\n").map(line=>JSON.parse(line)):[];
   return {...result,calls};
  }finally{rmSync(root,{recursive:true,force:true});}
@@ -77,9 +92,17 @@ test("failed publication leaves the reserved tag intact and reports recovery",()
  const r=run({scenario:"publish-failure"});assert.notEqual(r.status,0);assert.match(r.stderr,/tag was kept/);assert.equal(r.calls.some(call=>call.includes("DELETE")),false);
 });
 
-test("all CodeQL pages are checked and the newest result wins without --slurp",()=>{
+test("all CodeQL pages are checked and the newest trusted result wins with native --slurp",()=>{
  const old=run({scenario:"older-check-failed",args:["--dry-run"]});assert.equal(old.status,0,old.stderr);
- for(const scenario of ["newer-check-failed","later-page-failed"]){
+ for(const scenario of ["newer-check-failed","newer-check-pending","missing-check","untrusted-check","later-page-failed"]){
   const r=run({scenario});assert.notEqual(r.status,0);assert.equal(published(r.calls).length,0);assert.equal(r.calls.some(call=>call.includes("POST")),false);
  }
+});
+
+test("untrusted newer runs cannot replace GitHub Actions results",()=>{
+ const r=run({scenario:"untrusted-newer-failure",args:["--dry-run"]});assert.equal(r.status,0,r.stderr);
+});
+test("outdated CLI fails clearly before any repository access or writes",()=>{
+ const r=run({scenario:"old-cli"});assert.notEqual(r.status,0);assert.match(r.stderr,/Update GitHub CLI/);
+ assert.equal(r.calls.length,1);assert.deepEqual(r.calls[0],["api","--help"]);
 });

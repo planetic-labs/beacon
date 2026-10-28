@@ -1,3 +1,6 @@
+import { DeviceData } from "./device-data";
+import { useOfflineSync } from "./offline-sync";
+import { restoreAccount, readCache, localAccount, localGeneration, forgetAccount, queued, enqueue, acknowledge, storageProblem } from "../offline";
 import { About } from "./about";
 import { EmojiMenu } from "./emoji-menu";
 import { useDraftSync } from "./drafts";
@@ -14,6 +17,7 @@ import { moveMentions, type Mention, type SearchHit, normalizeEmail, stickerSugg
 import {
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   useCallback,
   type FormEvent,
@@ -29,7 +33,7 @@ import { StickerAdmin, StickerPicker, StickerSuggestions } from "./stickers";
 import { Icon } from "./icon";
 import { renderMessage } from "./message-types";
 
-import type { User, Chat, Message, Pending, Group } from "@beacon/shared";
+import type { User, Chat, Message, Pending, Group, OfflineSnapshot } from "@beacon/shared";
 import { api, ApiError, Avatar, Field, AvatarPicker, Dialog } from "./ui";
 import { Profile, Security, NewChat, UserForm, MembershipForm } from "./forms";
 import { PushSettings, ChatPushToggle, forgetPushDevice, pushWorker, syncPushDevice } from "./push-settings";
@@ -47,7 +51,11 @@ export function Beacon(): ReactNode {
   const mentions = useRef<Mention[]>([]), draftValue = useRef("");
   const mentionDrafts = useRef<Record<string,Mention[]>>({});
   const [chatMembers,setChatMembers] = useState<User[]>([]);
+  const [offlineWindow,setOfflineWindow]=useState<OfflineSnapshot|null>(null);
+  const offlineWindowRef=useRef<OfflineSnapshot|null>(null);
   const [historical,setHistorical] = useState(false);
+  const initialScroll = useRef<string|null>(null);
+  const positionedUnread=useRef(false), interactedWithHistory=useRef(false);
   const historyVersion = useRef(0), aroundBusy = useRef(false);
   const historicalRef = useRef(false), jumpRequest = useRef<{chatId:string;messageId:string}|null>(null);
   const [recordingKind, setRecordingKind] = useState<RecordingKind | null>(null);
@@ -77,6 +85,8 @@ export function Beacon(): ReactNode {
     {path:"/settings/profile",title:"Профиль",icon:"profile"},
     {path:"/settings/security",title:"Ключи доступа",icon:"key"},
     {path:"/settings/notifications",title:"Push-уведомления",icon:"bell"},
+    {path:"/settings/stickers",title:"Стикеры",icon:"sticker"},
+    {path:"/settings/data",title:"Данные на устройстве",icon:"storage"},
     {path:"/settings/about",title:"О приложении",icon:"info"},
   ] as const;
   const settingsPage=settingsSections.find(item=>item.path===pathname)??settingsSections[0];
@@ -179,14 +189,21 @@ export function Beacon(): ReactNode {
     window.addEventListener("beacon:before-update", save);
     return () => window.removeEventListener("beacon:before-update", save);
   }, [me?.id, selected, draft, context, busy]);
+  const restored=useRef(false), refreshingMe=useRef(false);
   const refreshMe = useCallback(async () => {
+    if(refreshingMe.current)return;refreshingMe.current=true;
+    if(!restored.current){
+      restored.current=true;
+      const cached=await restoreAccount();
+      if(cached){setMe(cached);setLoading(false);}
+    }
     try {
       setMe(await api<User>("me"));
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setMe(null);
       else notify(e);
     } finally {
-      setLoading(false);
+      setLoading(false);refreshingMe.current=false;
     }
   }, []);
   useEffect(() => {
@@ -205,10 +222,12 @@ export function Beacon(): ReactNode {
     return ()=>{active=false;};
   },[pathname,me?.role]);
   const refreshLists = useCallback(async () => {
+    const owner=localAccount();
     const [cs, us] = await Promise.all([
       api<Chat[]>("chats"),
       api<User[]>("users"),
     ]);
+    if(localAccount()!==owner)return;
     setChats(cs);
     setUsers(us);
   }, []);
@@ -217,7 +236,8 @@ export function Beacon(): ReactNode {
     try {
       const version=historyVersion.current;
       if (aroundBusy.current || jumpRequest.current?.chatId===id) return;
-      const first = messagesRef.current[0];
+      const gap=offlineWindowRef.current;
+      const first = gap?.hasMoreUnread ? messagesRef.current.find(m=>m.id===gap.unreadStartId) : messagesRef.current[0];
       const through = historicalRef.current && !older ? messagesRef.current.at(-1) : undefined;
       const forward = !!first && !older;
       let cursor = first,
@@ -243,6 +263,8 @@ export function Beacon(): ReactNode {
       } while (more && cursor);
       result.messages = collected;
       if (!forward) setHasMore(result.hasMore);
+      const previousLast=messagesRef.current.at(-1),nextLast=result.messages.at(-1);
+      const hasNewMessages=!!nextLast&&(!previousLast||nextLast.createdAt>previousLast.createdAt||(nextLast.createdAt===previousLast.createdAt&&nextLast.id>previousLast.id));
       const nearBottom = feed.current
         ? feed.current.scrollHeight -
             feed.current.scrollTop -
@@ -261,9 +283,9 @@ export function Beacon(): ReactNode {
             a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
         );
       });
-      if (!older && nearBottom && !historicalRef.current)
+      if (!older && hasNewMessages && initialScroll.current!==id && nearBottom && !historicalRef.current)
         setTimeout(
-          () => feed.current?.scrollTo({ top: feed.current.scrollHeight }),
+          () => {if(selectedRef.current===id&&historyVersion.current===version&&!historicalRef.current)feed.current?.scrollTo({top:feed.current.scrollHeight});},
           50,
         );
     } finally {
@@ -271,12 +293,19 @@ export function Beacon(): ReactNode {
     }
   }, []);
   const openChat = (id: string) => {
+    // Selecting the active conversation must not clear history, drafts or context:
+    // React does not reload the selected-chat effect for an unchanged ID.
+    if(selectedRef.current===id){
+      if(pathname!==`/chats/${id}`||legacyChat)void navigate({to:"/chats/$chatId",params:{chatId:id},search:{},replace:!!legacyChat});
+      return;
+    }
     setEmojiOpen(false);
     if (selectedRef.current && context?.kind!=="edit") { drafts.current[selectedRef.current] = draft; mentionDrafts.current[selectedRef.current]=mentions.current; }
     historyVersion.current++;aroundBusy.current=false;historicalRef.current=false;setHistorical(false);
+    initialScroll.current=id;positionedUnread.current=false;interactedWithHistory.current=false;
     setSelected(id);
     selectedRef.current = id;
-    setMessages([]);
+    setMessages([]);setOfflineWindow(null);offlineWindowRef.current=null;
     messagesRef.current = [];
     setDraft(drafts.current[id] ?? "",false);
     mentions.current=mentionDrafts.current[id]??[];
@@ -295,7 +324,8 @@ export function Beacon(): ReactNode {
     const open=async(id:unknown)=>{
       if (typeof id!=="string" || !/^[0-9a-f-]{36}$/i.test(id)) return;
       try {
-        const list=await api<Chat[]>("chats");
+        const cached=await readCache<Chat[]>("chats");
+        const list=cached??await api<Chat[]>("chats");
         if (!live) return;
         if (!list.some(c=>c.id===id)) throw new Error("У вас больше нет доступа к этой переписке");
         setChats(list);openChatRef.current(id);
@@ -321,6 +351,10 @@ export function Beacon(): ReactNode {
     window.addEventListener("offline", networkChanged);
     media.addEventListener("change", change);
     void refreshMe();
+    const storageError=()=>notify(new Error("Не удалось сохранить данные на устройстве. Проверьте свободное место и настройки браузера."));
+    window.addEventListener("beacon:storage-error",storageError);
+    const accountChanged=()=>location.reload();
+    window.addEventListener("beacon:account-changed",accountChanged);
     const unauthorized = () => {
       setMe(null);
       setChats([]);
@@ -336,6 +370,8 @@ export function Beacon(): ReactNode {
       window.removeEventListener("online", networkChanged);
       window.removeEventListener("offline", networkChanged);
       window.removeEventListener("beacon:unauthorized", unauthorized);
+      window.removeEventListener("beacon:storage-error",storageError);
+      window.removeEventListener("beacon:account-changed",accountChanged);
     };
   }, [refreshMe]);
   useEffect(() => {
@@ -348,6 +384,15 @@ export function Beacon(): ReactNode {
     const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
     return () => clearTimeout(t);
   }, [cooldown]);
+  useEffect(()=>{
+    if(!me)return;
+    const owner=me.id;let live=true;setChats([]);setUsers([]);
+    void Promise.all([readCache<Chat[]>("chats"),readCache<User[]>("users")]).then(([cs,us])=>{
+      if(!live||localAccount()!==owner)return;
+      if(cs)setChats(cs);if(us)setUsers(us);
+    });
+    return()=>{live=false;};
+  },[me?.id]);
   useEffect(() => {
     if (!me?.firstName || !me.lastName) return;
     void refreshLists().catch(notify);
@@ -409,6 +454,7 @@ export function Beacon(): ReactNode {
     if(target&&messages.some(m=>m.id===target.id&&m.type==="deleted")){setTarget(null);setModal(null);}
   },[messages,context,target]);
   useEffect(()=>{setPhotoView(null);setAttachmentsOpen(false);setReadDetails(null);},[me?.id]);
+  useOfflineSync(me?.id,section==="chats"?selected:null,socket);
   const draftSync=useDraftSync(me?.id,socket,`${me?.firstName}/${me?.lastName}`,(id,value)=>{
     drafts.current[id]=value.text;mentionDrafts.current[id]=value.mentions;
     if(selectedRef.current===id&&!editingRef.current){draftValue.current=value.text;setDraftValue(value.text);mentions.current=value.mentions;}
@@ -426,9 +472,49 @@ export function Beacon(): ReactNode {
     if(!request||selected!==request.chatId)return;
     void loadAround(request.chatId,request.messageId).catch(notify).finally(()=>{if(jumpRequest.current===request)jumpRequest.current=null;});
   },[selected]);
+  // Position cached history before paint. Prefer the latest unread incoming
+  // message, otherwise the end; subsequent refreshes preserve the reading position.
+  useLayoutEffect(()=>{
+    if(section!=="chats"){initialScroll.current=selected;return;}
+    const chat=chats.find(item=>item.id===selected);
+    // Fresh chat metadata can reveal unread messages after a stale cached list
+    // was painted. Reposition once, unless the user has already begun browsing.
+    const unreadArrived=!!chat?.unread&&!positionedUnread.current&&!interactedWithHistory.current;
+    if(!selected||(!unreadArrived&&initialScroll.current!==selected)||!feed.current)return;
+    if(historicalRef.current||aroundBusy.current||jumpRequest.current?.chatId===selected)return;
+    if(!messages.length&&!pending.some(item=>item.chatId===selected))return;
+    const unreadId=chat?.unread ? chat.lastUnreadMessageId??messages.findLast(message=>message.authorId!==me?.id&&message.type!=="deleted")?.id : undefined;
+    if(unreadId&&!messages.some(message=>message.id===unreadId)){
+      void loadAround(selected,unreadId).catch(notify);return;
+    }
+    if(unreadId){document.getElementById(`message-${unreadId}`)?.scrollIntoView({block:"start"});positionedUnread.current=true;}
+    else feed.current.scrollTop=feed.current.scrollHeight;
+    initialScroll.current=null;
+  },[selected,messages,pending,chats,section]);
   useEffect(() => {
-    if (selected) void refreshHistory(selected).catch(notify);
-  }, [selected]);
+    if(!selected||!me)return;
+    let live=true;
+    void (async()=>{
+      const snapshot=await readCache<OfflineSnapshot>(`history/${selected}`);
+      const cached=snapshot?.messages;
+      if(!live||aroundBusy.current||historicalRef.current||jumpRequest.current?.chatId===selected)return;
+      if(cached){setMessages(cached);messagesRef.current=cached;setOfflineWindow(snapshot!);offlineWindowRef.current=snapshot!;setHasMore(snapshot!.hasMoreRead||snapshot!.hasMoreUnread);}
+      try{await refreshHistory(selected);}catch(error){if(live&&navigator.onLine)notify(error);}
+    })();
+    return()=>{live=false;};
+  }, [selected,me?.id]);
+  useEffect(()=>{
+    if(!selected)return;
+    let live=true;
+    const updated=(event:Event)=>{if((event as CustomEvent<{chatId:string}>).detail.chatId!==selected)return;void readCache<OfflineSnapshot>(`history/${selected}`).then(snapshot=>{
+      if(!live||!snapshot)return;
+      setOfflineWindow(snapshot);offlineWindowRef.current=snapshot;
+      const byId=new Map(snapshot.messages.map(m=>[m.id,m]));
+      setMessages(previous=>previous.map(m=>byId.get(m.id)??m));
+    });};
+    window.addEventListener("beacon:history-updated",updated);
+    return()=>{live=false;window.removeEventListener("beacon:history-updated",updated);};
+  },[selected]);
   useEffect(() => {
     const input = textarea.current;
     if (!input) return;
@@ -444,47 +530,67 @@ export function Beacon(): ReactNode {
     input.style.overflowY =
       input.scrollHeight > parseFloat(input.style.height) ? "auto" : "hidden";
   }, [draft, device, context]);
-  useEffect(() => {
-    if (!me) return;
-    try {
-      const saved = JSON.parse(
-        sessionStorage.getItem(`pending:${me.id}`) ?? "[]",
-      );
-      if (Array.isArray(saved)) setPending(saved);
-    } catch {}
-  }, [me?.id]);
-  useEffect(() => {
-    if (me) sessionStorage.setItem(`pending:${me.id}`, JSON.stringify(pending));
-  }, [pending, me?.id]);
+  const [queueReady,setQueueReady]=useState<string|null>(null),[retryTick,setRetryTick]=useState(0);
+  const flushing=useRef(false),retryAfter=useRef(new Map<string,number>());
+  useEffect(()=>{
+    setQueueReady(null);setPending([]);
+    if(!me)return;
+    const owner=me.id;let live=true;
+    void (async()=>{
+      try{
+        // Migrate the previous per-tab queue without changing its idempotency keys.
+        let legacy:Pending[]=[];
+        try{const value=JSON.parse(sessionStorage.getItem(`pending:${owner}`)??"[]");if(Array.isArray(value))legacy=value;}catch{/* IndexedDB remains usable when sessionStorage is blocked. */}
+        if(Array.isArray(legacy))for(const item of legacy)if(item?.clientMessageId&&!item.stickerId&&!item.forwardId&&!item.forwards)await enqueue(owner,item);
+        const saved=await queued(owner);
+        if(live&&localAccount()===owner){setPending(previous=>[...new Map([...saved,...(Array.isArray(legacy)?legacy.filter(item=>item?.stickerId||item?.forwardId||item?.forwards):[]),...previous].map(item=>[item.clientMessageId,item])).values()]);setQueueReady(owner);}
+      }catch{storageProblem();if(live)setQueueReady(owner);}
+    })();
+    return()=>{live=false;};
+  },[me?.id]);
+  useEffect(()=>{
+    if(me&&queueReady===me.id)try{sessionStorage.setItem(`pending:${me.id}`,JSON.stringify(pending.filter(item=>item.stickerId||item.forwardId||item.forwards)));}catch{/* Non-text pending items retain their previous per-tab behavior. */}
+  },[pending,queueReady,me?.id]);
+  useEffect(()=>{const timer=setInterval(()=>setRetryTick(n=>n+1),5000);return()=>clearInterval(timer);},[]);
   async function deliver(item: Pending) {
-    if (sending.current.has(item.clientMessageId)) return;
+    const owner=meRef.current?.id,generation=localGeneration();
+    if(!owner||sending.current.has(item.clientMessageId))return false;
     sending.current.add(item.clientMessageId);
     try {
       if(item.forwards)await api(`chats/${item.chatId}/forward`,"POST",{messages:item.forwards});
-      else await api(`chats/${item.chatId}/messages`, "POST", item);
-      setPending((ps) =>
-        ps.filter((p) => p.clientMessageId !== item.clientMessageId),
-      );
-      await refreshLists();
-      if (selectedRef.current === item.chatId)
-        await refreshHistory(item.chatId);
-    } catch (e) {
-      setPending((ps) =>
-        ps.map((p) =>
-          p.clientMessageId === item.clientMessageId
-            ? { ...p, failed: navigator.onLine }
-            : p,
-        ),
-      );
-      notify(e);
-    } finally {
-      sending.current.delete(item.clientMessageId);
-    }
+      else await api(`chats/${item.chatId}/messages`,"POST",item);
+      if(localAccount()!==owner||localGeneration()!==generation)return false;
+      await acknowledge(owner,item.clientMessageId);
+      setPending(ps=>ps.filter(p=>p.clientMessageId!==item.clientMessageId));
+      await refreshLists().catch(()=>{});
+      if(selectedRef.current===item.chatId)await refreshHistory(item.chatId).catch(()=>{});
+      return true;
+    } catch(error) {
+      if(localAccount()!==owner||localGeneration()!==generation)return false;
+      const permanent=error instanceof ApiError&&[400,403,404,409,413,422].includes(error.status);
+      retryAfter.current.set(item.clientMessageId,Date.now()+10000);
+      const next={...item,failed:permanent};
+      if(!item.stickerId&&!item.forwardId&&!item.forwards)await enqueue(owner,next).catch(storageProblem);
+      setPending(ps=>ps.map(p=>p.clientMessageId===item.clientMessageId?next:p));
+      if(permanent)notify(error);
+      return false;
+    } finally {sending.current.delete(item.clientMessageId);}
   }
-  useEffect(() => {
-    if (networkAvailable)
-      pending.filter((p) => !p.failed).forEach((p) => void deliver(p));
-  }, [pending, networkAvailable]);
+  useEffect(()=>{
+    if(!networkAvailable||!me||queueReady!==me.id||flushing.current||!pending.some(p=>!p.failed&&(retryAfter.current.get(p.clientMessageId)??0)<=Date.now()))return;
+    flushing.current=true;
+    const generation=localGeneration();
+    void (async()=>{
+      try{
+        await api("me","GET",undefined,true);
+        for(const item of pending){
+          if(localGeneration()!==generation)break;
+          if(!item.failed&&(retryAfter.current.get(item.clientMessageId)??0)<=Date.now())if(!await deliver(item))break;
+        }
+      }catch{/* Offline or expired session: never flush on a cached identity alone. */}
+      finally{flushing.current=false;}
+    })();
+  },[pending,networkAvailable,retryTick,queueReady,me?.id]);
   async function requestCode(e?: FormEvent) {
     e?.preventDefault();
     if (busy) return;
@@ -524,7 +630,7 @@ export function Beacon(): ReactNode {
   useEffect(() => { setPhotos([]); setRecordingKind(null); setAttachment(null);setDeleting(null);setSelectionMode(false);setSelectedMessages([]);setForwardSources([]);setPhotoView(null);setAttachmentsOpen(false);setReadDetails(null); }, [selected]);
   async function submitMessage(e: FormEvent) {
     e.preventDefault();
-    if (!selected || (!draft.trim() && !photos.length) || busy) return;
+    if (!selected || (!draft.trim() && !photos.length) || busy || queueReady!==me?.id) return;
     activity(null);
     if (photos.length && context?.kind !== "edit") {
       const chatId = selected;
@@ -566,6 +672,8 @@ export function Beacon(): ReactNode {
       mentions: [...mentions.current],
       replyToId: context?.message.id,
     };
+    setBusy(true);
+    try{await enqueue(me!.id,p);}catch(error){storageProblem();notify(new Error("Сообщение не сохранено. Текст оставлен в поле ввода."));return;}finally{setBusy(false);}
     setPending((ps) => [...ps, p]);
     setDraft("");
     drafts.current[selected] = "";
@@ -622,6 +730,7 @@ export function Beacon(): ReactNode {
     setTimeout(()=>{const node=document.getElementById(`message-${id}`);node?.scrollIntoView({block:"center"});node?.classList.add("highlight");setTimeout(()=>node?.classList.remove("highlight"),1800);},80);
   }
   async function loadAround(chatId:string,messageId:string) {
+    initialScroll.current=null;interactedWithHistory.current=true;
     setSelectionMode(false);setSelectedMessages([]);
     const version=++historyVersion.current;aroundBusy.current=true;
     try {
@@ -1073,12 +1182,12 @@ export function Beacon(): ReactNode {
                   </div>
                 )}
                 {historical && <button className="history-return text-button" onClick={()=>{historyVersion.current++;historicalRef.current=false;setHistorical(false);messagesRef.current=[];setMessages([]);void refreshHistory(selected).catch(notify);}}>К новым сообщениям</button>}
-                <div className="feed" ref={feed}>
+                <div className="feed" ref={feed} onWheelCapture={()=>{interactedWithHistory.current=true;}} onTouchStartCapture={()=>{interactedWithHistory.current=true;}} onPointerDownCapture={()=>{interactedWithHistory.current=true;}} onKeyDownCapture={()=>{interactedWithHistory.current=true;}}>
                   <div className="feed-inner">
                     {hasMore && (
                       <button
                         className="text-button"
-                        disabled={historyBusy}
+                        disabled={historyBusy||!networkAvailable}
                         onClick={() =>
                           void refreshHistory(selected, true).catch(notify)
                         }
@@ -1086,9 +1195,12 @@ export function Beacon(): ReactNode {
                         {historyBusy ? "Загружаем…" : "Предыдущие сообщения"}
                       </button>
                     )}
+                    {!online&&!messages.length&&<p className="offline-history-note">Переписка ещё не загружена на это устройство. Подключитесь к интернету.</p>}
+                    {offlineWindow?.hasMoreUnread&&<p className="offline-history-note">Часть непрочитанных сообщений не сохранена на устройстве. Доступны последние 1000; полная история — с интернетом.</p>}
                     {messages.map((m, i) => (
                       <div key={m.id} id={`message-${m.id}`}>
                         <>
+                          {offlineWindow?.hasMoreUnread&&m.id===offlineWindow.unreadStartId&&<div className="offline-history-note">Часть истории между этими сообщениями ещё не загружена.{networkAvailable&&<button className="text-button" type="button" onClick={()=>void loadAround(selected,m.id).catch(notify)}>Загрузить пропущенную историю</button>}</div>}
                           {(i === 0 ||
                             new Date(
                               messages[i - 1].createdAt,
@@ -1106,19 +1218,18 @@ export function Beacon(): ReactNode {
                           className={`message-group ${m.authorId === me.id ? "outgoing" : ""} ${selectedMessages.includes(m.id)?"selected-message":""} ${selectionMode?"selectable-message":""}`}
                         >
                           {selectionMode&&m.type!=="deleted"&&<input type="checkbox" className="message-selection" aria-label={`Выбрать сообщение ${m.authorName}: ${(m.content.text||m.content.name||"Вложение").slice(0,60)}`} checked={selectedMessages.includes(m.id)} disabled={!selectedMessages.includes(m.id)&&selectedMessages.length>=100} onChange={()=>toggleSelected(m.id)}/>}
-                          {m.authorId !== me.id && (
-                            <div className="message-avatar">
-                              <Avatar
-                                name={m.authorName}
-                                image={users.find(u => u.id === m.authorId)?.image ?? m.authorImage}
-                                extra="green"
-                              />
-                            </div>
-                          )}
+                          <div className="message-avatar">
+                            <Avatar name={m.authorId===me.id?me.name:m.authorName}
+                              image={m.authorId===me.id?me.image:users.find(u=>u.id===m.authorId)?.image??m.authorImage} extra="green"/>
+                          </div>
                           <div className="group-body">
-                            {m.authorId !== me.id && (
-                              <div className="author">{m.authorName}</div>
-                            )}
+                            <div className="message-heading">
+                              <div className="author">{m.authorId===me.id?me.name:users.find(u=>u.id===m.authorId)?.name??m.authorName}</div>
+                              <div className="message-meta">
+                                {current.kind!=="saved"&&m.type!=="deleted"&&m.authorId===me.id&&<DeliveryStatus receipts={receipts} message={m} open={()=>setReadDetails(m)}/>}
+                                <time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleTimeString("ru",{hour:"2-digit",minute:"2-digit"})}</time>
+                              </div>
+                            </div>
                             <div className="bubble-row">
                               <div className={`bubble ${m.type === "sticker" ? "sticker-bubble" : ""}`}>
                                 {m.forwardedFrom && (
@@ -1137,22 +1248,8 @@ export function Beacon(): ReactNode {
                                 <span className="bubble-text">
                                   {renderMessage(m.type, m.content, me.id, id=>{if(id!==me.id)void startDirectChat(id);}, index=>setPhotoView({chatId:m.chatId,messageId:m.id,index}))}
                                 </span>
-                                <span className="message-meta">
-                                  {current.kind!=="saved"&&m.type!=="deleted"&&m.authorId===me.id&&<DeliveryStatus receipts={receipts} message={m} open={()=>setReadDetails(m)}/>}
-                                  {m.editedAt && (
-                                    <span
-                                      title={new Date(
-                                        m.editedAt,
-                                      ).toLocaleString("ru")}
-                                    >
-                                      Изменено ·{" "}
-                                    </span>
-                                  )}
-                                  {new Date(m.createdAt).toLocaleTimeString(
-                                    "ru",
-                                    { hour: "2-digit", minute: "2-digit" },
-                                  )}
-                                </span>
+                                {m.editedAt && <span className="message-edited" title={new Date(m.editedAt).toLocaleString("ru")}>Изменено</span>}
+
                               </div>
                             </div>
                             {m.type!=="deleted"&&!selectionMode&&<div className="message-tools">
@@ -1227,7 +1324,9 @@ export function Beacon(): ReactNode {
                           className="message-group outgoing"
                           key={p.clientMessageId}
                         >
+                          <div className="message-avatar"><Avatar name={me.name} image={me.image} extra="green"/></div>
                           <div className="group-body">
+                            <div className="message-heading"><div className="author">{me.name}</div></div>
                             <div className="bubble-row">
                               <div className="bubble">
                                 <span className="bubble-text">{p.text}</span>
@@ -1251,7 +1350,8 @@ export function Beacon(): ReactNode {
                                           : x,
                                       ),
                                     );
-                                    void deliver(p);
+                                    retryAfter.current.delete(p.clientMessageId);
+                                    if(!p.stickerId&&!p.forwards&&!p.forwardId)void enqueue(me.id,{...p,failed:false}).catch(storageProblem);
                                   }}
                                 >
                                   Повторить
@@ -1327,10 +1427,10 @@ export function Beacon(): ReactNode {
                         if(!file.size||file.size>attachmentLimits[kind]){notify(new Error(`Допустимый размер: ${kind==="video"?"500":"100"} МБ`));return;}
                         setAttachment({file,kind,chatId:selected});
                       }}/>
-                      <button type="button" className="composer-action" aria-label="Прикрепить файл или видео" disabled={busy||context?.kind==="edit"||!!photos.length} onClick={()=>attachmentInput.current?.click()}><Icon name="file"/></button>
-                      <button type="button" className="composer-action" aria-label="Записать голосовое сообщение" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("audio")}><Icon name="mic" /></button>
-                      <button type="button" className="composer-action" aria-label="Записать видеокружок" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("circle")}><Icon name="video" /></button>
-                      <button type="button" className="composer-action" aria-label="Выбрать стикер" disabled={busy || context?.kind === "edit"} onClick={() => setStickersOpen(true)}><Icon name="sticker" /></button>
+                      <button type="button" className="composer-action" aria-label="Прикрепить файл или видео" data-tooltip="Отправить файл или видео" disabled={busy||context?.kind==="edit"||!!photos.length} onClick={()=>attachmentInput.current?.click()}><Icon name="file"/></button>
+                      <button type="button" className="composer-action" aria-label="Записать голосовое сообщение" data-tooltip="Отправить голосовое сообщение" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("audio")}><Icon name="mic" /></button>
+                      <button type="button" className="composer-action" aria-label="Записать видеокружок" data-tooltip="Отправить видеокружок" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("circle")}><Icon name="video" /></button>
+                      <button type="button" className="composer-action" aria-label="Выбрать стикер" data-tooltip="Отправить стикер" disabled={busy || context?.kind === "edit"} onClick={() => setStickersOpen(true)}><Icon name="sticker" /></button>
                       <input ref={photoInput} type="file" multiple className="sr-only" aria-label="Выбрать фото" accept="image/jpeg,image/png,image/webp" disabled={busy || context?.kind === "edit"} onChange={e => {
                         const files = Array.from(e.target.files ?? []); e.target.value = "";
                         if (!files.length) return;
@@ -1338,11 +1438,11 @@ export function Beacon(): ReactNode {
                         if (files.some(file => !file.size || file.size > 5 * 1024 * 1024 || !["image/jpeg", "image/png", "image/webp"].includes(file.type))) { notify(new Error("Выберите PNG, JPEG или WebP до 5 МБ каждый")); return; }
                         photoMessageId.current = v7(); setPhotos(items => [...items, ...files]);
                       }} />
-                      <button type="button" className="composer-action" aria-label="Прикрепить фото" disabled={busy || context?.kind === "edit"} onClick={() => photoInput.current?.click()}><Icon name="photo" /></button>
+                      <button type="button" className="composer-action" aria-label="Прикрепить фото" data-tooltip="Отправить фото" disabled={busy || context?.kind === "edit"} onClick={() => photoInput.current?.click()}><Icon name="photo" /></button>
                       <button
                         className="composer-action"
                         type="button"
-                        aria-label="Добавить эмодзи"
+                        aria-label="Добавить эмодзи" data-tooltip="Добавить эмодзи"
                         disabled={busy}
                         aria-haspopup="dialog"
                         aria-expanded={emojiOpen}
@@ -1359,7 +1459,8 @@ export function Beacon(): ReactNode {
                       </button>
                       <button
                         className="composer-action send-button"
-                        disabled={(!draft.trim() && !photos.length) || busy}
+                        data-tooltip={context?.kind==="edit"?"Сохранить изменения":"Отправить сообщение"}
+                        disabled={(!draft.trim() && !photos.length) || busy || queueReady!==me.id}
                         aria-label={
                           context?.kind === "edit"
                             ? "Сохранить изменения"
@@ -1435,6 +1536,8 @@ export function Beacon(): ReactNode {
             <div className="settings-main">
               {section === "profile" ? settingsPage.path === "/settings/security" ? <Security email={me.email} notify={notify}/>
                 : settingsPage.path === "/settings/notifications" ? <PushSettings notify={notify}/>
+                : settingsPage.path === "/settings/stickers" ? <StickerAdmin key="mine" scope="mine" notify={notify}/>
+                : settingsPage.path === "/settings/data" ? <DeviceData notify={notify}/>
                 : settingsPage.path === "/settings/about" ? <About/>
                 : (
                 <>
@@ -1444,9 +1547,12 @@ export function Beacon(): ReactNode {
                     onClick={async () => {
                       await forgetPushDevice().catch(()=>{});
                       await authClient.signOut();
-                      sessionStorage.removeItem(`pending:${me.id}`);
-                      sessionStorage.removeItem(`update-drafts:${me.id}`);
-                      sessionStorage.removeItem(`beacon:unsynced-drafts:${me.id}`);
+                      await forgetAccount();
+                      try{
+                        sessionStorage.removeItem(`pending:${me.id}`);
+                        sessionStorage.removeItem(`update-drafts:${me.id}`);
+                        sessionStorage.removeItem(`beacon:unsynced-drafts:${me.id}`);
+                      }catch{/* Logout must work when per-tab storage is blocked. */}
                       setMe(null);
                       setSection("chats");
                       closeChat();
@@ -1458,7 +1564,7 @@ export function Beacon(): ReactNode {
                   </button>
                 </>
               ) : me.role !== "admin" ? <p>Этот раздел доступен только администраторам.</p>
-              : adminPage.path === "/admin/stickers" ? <StickerAdmin notify={notify} />
+              : adminPage.path === "/admin/stickers" ? <StickerAdmin key="all" scope="all" notify={notify} />
               : adminPage.path === "/admin/groups" ? (
                 <div className="settings-card">
                   <div className="panel-heading">

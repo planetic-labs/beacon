@@ -11,8 +11,8 @@ async function upload(packId: string, files: File[]) {
   if (response.status === 401) window.dispatchEvent(new Event("beacon:unauthorized"));
   if (!response.ok) throw new Error((await response.json()).error || "Не удалось загрузить стикеры");
 }
-async function requestPacks(method = "GET", id = "", data?: unknown): Promise<StickerPack[]> {
-  const response = await fetch(`/api/stickers${id ? `/${id}` : ""}`, { method, headers: data ? { "Content-Type": "application/json" } : undefined, body: data ? JSON.stringify(data) : undefined });
+async function requestPacks(method = "GET", id = "", data?: unknown, scope?: "mine" | "all"): Promise<StickerPack[]> {
+  const response = await fetch(`/api/stickers${id ? `/${id}` : ""}${scope ? `?scope=${scope}` : ""}`, { method, headers: data ? { "Content-Type": "application/json" } : undefined, body: data ? JSON.stringify(data) : undefined });
   if (response.status === 401) window.dispatchEvent(new Event("beacon:unauthorized"));
   if (!response.ok) throw new Error((await response.json()).error || "Не удалось загрузить наборы");
   return response.json();
@@ -40,29 +40,36 @@ export function StickerPicker({ userId, close, choose, notify }: { userId: strin
       rememberSticker(userId, sticker.id);
       choose(sticker); close();
     }} /> : <p className="field-note">{query.trim() ? "Подходящих стикеров нет." : selected === "recent" ? "Здесь появятся недавно выбранные стикеры." : "В этом наборе пока нет стикеров."}</p>}
-    {!loading && !packs.length && <p className="field-note">Администратор ещё не добавил наборы.</p>}
+    {!loading && !packs.length && <p className="field-note">Пока нет включённых наборов.</p>}
   </Dialog>;
 }
-export function StickerAdmin({ notify }: { notify: (error: unknown) => void }) {
+export function StickerAdmin({ notify, scope = "all" }: { notify: (error: unknown) => void; scope?: "mine" | "all" }) {
   const [packs, setPacks] = useState<StickerPack[]>([]);
   const [name, setName] = useState("");
+  const [deletingPack, setDeletingPack] = useState<StickerPack | null>(null);
   const [editingSticker, setEditingSticker] = useState<{ packId: string; sticker: Sticker } | null>(null);
   const [editingPack, setEditingPack] = useState<string | null>(null);
   const [packName, setPackName] = useState("");
   const [busy, setBusy] = useState(false);
-  async function refresh() { setPacks(await requestPacks()); }
-  useEffect(() => { void refresh().catch(notify); }, []);
+  async function refresh() { setPacks(await requestPacks("GET", "", undefined, scope)); }
+  useEffect(() => {
+    let live=true;
+    void requestPacks("GET","",undefined,scope).then(value=>{if(live)setPacks(value);}).catch(error=>{if(live)notify(error);});
+    return()=>{live=false;};
+  }, [scope]);
   async function action(work: () => Promise<unknown>) {
     setBusy(true); try { await work(); await refresh(); window.dispatchEvent(new Event("beacon:stickers-changed")); } catch (e) { notify(e); } finally { setBusy(false); }
   }
-  return <section className="settings-card"><h2>Наборы стикеров</h2>
+  return <section className="settings-card"><h2>{scope === "mine" ? "Мои наборы стикеров" : "Наборы стикеров"}</h2>
+    <p className="field-note">Включённые наборы доступны всем участникам. Выключенные не показываются в выборе стикеров.</p>
     <form className="sticker-create" onSubmit={event => { event.preventDefault(); if (!name.trim() || busy) return; void action(async () => { await requestPacks("POST", "", { name }); setName(""); }); }}>
       <input aria-label="Название набора стикеров" placeholder="Название набора" maxLength={80} required value={name} disabled={busy} onChange={e => setName(e.target.value)} />
       <button className="primary-button" disabled={busy || !name.trim()}>Создать набор</button>
     </form>
     <p className="field-note">PNG, JPEG или WebP до 10 МБ каждый. Изображения автоматически уменьшаются до 512 × 512 и сохраняются в WebP с сохранением пропорций и прозрачности. За один раз можно загрузить до 10 файлов. Названия берутся из имён файлов.</p>
     {packs.map(pack => <div key={pack.id} className="sticker-admin-pack">
-      <div className="panel-heading"><strong>{pack.name} · {pack.stickers.length}</strong><div className="sticker-pack-actions"><button type="button" className="secondary-button" disabled={busy} aria-label={`Переименовать набор ${pack.name}`} onClick={() => { setEditingPack(pack.id); setPackName(pack.name); }}>Переименовать</button><button type="button" className="secondary-button" disabled={busy} onClick={() => void action(() => requestPacks("PATCH", pack.id, { active: !pack.active }))}>{pack.active ? "Отключить набор" : "Включить набор"}</button></div></div>
+      <div className="panel-heading"><strong>{pack.name} · {pack.stickers.length}</strong><div className="sticker-pack-actions"><button type="button" className="secondary-button" disabled={busy} aria-label={`Переименовать набор ${pack.name}`} onClick={() => { setEditingPack(pack.id); setPackName(pack.name); }}>Переименовать</button><button type="button" className="secondary-button" disabled={busy} onClick={() => void action(() => requestPacks("PATCH", pack.id, { active: !pack.active }))}>{pack.active ? "Отключить набор" : "Включить набор"}</button><button type="button" className="text-button" disabled={busy} aria-label={`Удалить набор ${pack.name}`} onClick={()=>setDeletingPack(pack)}>Удалить набор</button></div></div>
+      {scope === "all" && <p className="field-note">Владелец: {pack.ownerName || "Не назначен"}</p>}
       {editingPack === pack.id && <form className="sticker-create" onSubmit={event => {
         event.preventDefault(); if (busy || !packName.trim()) return;
         void action(async () => { await requestPacks("PATCH", pack.id, { name: packName.trim() }); setEditingPack(null); });
@@ -76,6 +83,11 @@ export function StickerAdmin({ notify }: { notify: (error: unknown) => void }) {
       {!pack.active && <p className="field-note">Набор отключён. Отправленные стикеры сохраняются в переписке.</p>}
       <Tiles stickers={pack.stickers} busy={busy} edit={sticker => setEditingSticker({ packId: pack.id, sticker })} remove={sticker => void action(() => requestPacks("DELETE", `${pack.id}/stickers/${sticker.id}`))} />
     </div>)}
+    {!packs.length && <p className="field-note">{scope === "mine" ? "У вас пока нет наборов. Создайте первый." : "Наборов пока нет."}</p>}
+    {deletingPack && <Dialog title="Удалить набор?" close={()=>{if(!busy)setDeletingPack(null);}}>
+      <p>Удалить набор «{deletingPack.name}»? Он исчезнет у всех участников. Уже отправленные стикеры сохранятся в переписках.</p>
+      <div className="inline-actions"><button type="button" className="primary-button" disabled={busy} onClick={()=>void action(async()=>{await requestPacks("DELETE",deletingPack.id);setDeletingPack(null);setEditingSticker(null);setEditingPack(null);})}>Удалить набор</button><button type="button" className="secondary-button" disabled={busy} onClick={()=>setDeletingPack(null)}>Отмена</button></div>
+    </Dialog>}
     {editingSticker && <StickerMetadataEditor sticker={editingSticker.sticker} close={() => setEditingSticker(null)} save={async metadata => {
       await requestPacks("PATCH", `${editingSticker.packId}/stickers/${editingSticker.sticker.id}`, metadata);
       await refresh(); window.dispatchEvent(new Event("beacon:stickers-changed")); setEditingSticker(null);

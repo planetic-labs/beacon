@@ -23,6 +23,7 @@ export type Chat = {
   preview?: string;
   lastAt?: string;
   unread: number;
+  lastUnreadMessageId?: string | null;
   unreadMentions?: number;
   lastMessageId?: string;
 };
@@ -63,8 +64,10 @@ export type Group = {
 };
 
 export type Sticker = { id: string; fileId: string; label: string; emojis?: string[]; keywords?: string[] };
-export type StickerPack = { id: string; name: string; active: boolean; stickers: Sticker[] };
+export type StickerPack = { ownerId?: string | null; ownerName?: string | null; id: string; name: string; active: boolean; stickers: Sticker[] };
 
 export type Pin = { id:string; authorName:string; text:string; type:string; pinnedBy:string; pinnedAt:string };
 export type PinPage = { pins:Pin[]; total:number; next?:{id:string;at:string} };
 export type Presence = { userId:string; online:boolean; lastSeenAt:string|null };
+
+export type OfflineSnapshot = {messages:Message[];hasMoreRead:boolean;hasMoreUnread:boolean;unreadStartId?:string};

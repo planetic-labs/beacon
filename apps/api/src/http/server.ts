@@ -77,6 +77,7 @@ export async function createApp(options: { dev?: boolean; serveWeb?: boolean } =
     app.route({ method, url: "/api/stickers", bodyLimit: 101 * 1024 * 1024, handler: bridge(stickers) });
     app.route({ method, url: "/api/stickers/:id", bodyLimit: 101 * 1024 * 1024, handler: bridge(stickers) });
   }
+  app.delete("/api/stickers/:id", bridge(stickers));
   app.delete("/api/stickers/:id/stickers/:stickerId", bridge(stickers));
   app.patch("/api/stickers/:id/stickers/:stickerId", bridge(stickers));
   app.post("/api/recordings", { bodyLimit: 26 * 1024 * 1024 }, bridge(recording));

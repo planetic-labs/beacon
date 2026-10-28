@@ -7,7 +7,7 @@ dry_run=false
 case "${1:-}" in
   --dry-run) dry_run=true; shift ;;
   --help|-h)
-    printf 'Usage: ./scripts/release.sh [--dry-run]\nCreates a dated GitHub release from checked main. Requires gh, git and a signed-in GitHub account.\n'
+    printf 'Usage: ./scripts/release.sh [--dry-run]\nCreates a dated GitHub release from checked main. Requires gh, jq, git and a signed-in GitHub account.\n'
     exit 0 ;;
 esac
 if [ "$#" -ne 0 ]; then
@@ -15,6 +15,12 @@ if [ "$#" -ne 0 ]; then
   exit 1
 fi
 command -v gh >/dev/null 2>&1 || { printf 'Install GitHub CLI (gh) and run gh auth login first.\n' >&2; exit 1; }
+# Require the native aggregation used below, rather than silently weakening checks.
+if ! gh api --help | grep -q -- '--slurp'; then
+  printf 'Update GitHub CLI (gh): this script requires gh api --slurp support.\n' >&2
+  exit 1
+fi
+command -v jq >/dev/null 2>&1 || { printf 'Install jq before creating a release.\n' >&2; exit 1; }
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 revision=$(gh api "repos/$repo/branches/main" --jq .commit.sha)
 case "$revision" in ''|*[!0-9a-f]*) printf 'Cannot resolve main commit.\n' >&2; exit 1 ;; esac
@@ -32,17 +38,14 @@ runtime=$(mktemp -d)
 trap 'rm -rf "$runtime"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-# Older gh versions support paginated per-page projection, but not --slurp.
-# Save every page before processing, so a later API failure cannot look like
-# a successful partial list. Keep the newest run for each trusted check name.
-gh api --paginate "repos/$repo/commits/$revision/check-runs?per_page=100" \
-  --jq '.check_runs[] | select(.app.slug == "github-actions") | select(.name == "Analyze (actions)" or .name == "Analyze (javascript-typescript)") | [.name, (.id | tostring), .status, .conclusion] | @tsv' > "$runtime/checks"
-analyses=$(awk -F '\t' '
-  $2+0 > newest[$1] { newest[$1]=$2+0; state[$1]=$3; result[$1]=$4 }
-  END {
-    for (name in newest) if (state[name]=="completed" && result[name]=="success") count++
-    print count+0
-  }' "$runtime/checks")
+# Aggregate all pages before choosing the newest trusted run for each check.
+# A failed page makes gh fail, so incomplete results can never approve a release.
+gh api --paginate --slurp "repos/$repo/commits/$revision/check-runs?per_page=100" > "$runtime/checks.json"
+analyses=$(jq -r '[.[].check_runs[] | select(.app.slug == "github-actions") | select(.name == "Analyze (actions)" or .name == "Analyze (javascript-typescript)")]
+    | group_by(.name)
+    | map(max_by(.id))
+    | map(select(.status == "completed" and .conclusion == "success"))
+    | length' "$runtime/checks.json")
 if [ "$analyses" != 2 ]; then
   printf 'Both CodeQL analyses for main must pass before releasing. Repeat after they finish.\n' >&2
   exit 1

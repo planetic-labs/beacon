@@ -27,7 +27,8 @@ try {
     await context.route("**/api/**", async route => {
       const request = route.request(); const path = new URL(request.url()).pathname;
       let data: unknown = {};
-      if (path === "/api/v1/me") data = user;
+      if (path === "/api/v1/admin/groups") data = [];
+      else if (path === "/api/v1/me") data = user;
       else if (path === "/api/v1/users") data = [user];
       else if (path === "/api/v1/chats") data = [{ id: chatId, name: "Тестовый чат", title: "Тестовый чат", kind: "group", ownerId: user.id, unread: 0 }];
       else if (path === "/api/stickers") {

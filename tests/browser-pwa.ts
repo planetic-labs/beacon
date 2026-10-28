@@ -79,11 +79,11 @@ try {
   assert.equal(assetRequests, assetsBefore, "Reload uses cached assets");
   await context.setOffline(true);
   await page.reload();
-  await expect(page.locator("#email")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Сообщение", exact: true })).toBeVisible();
   await page.goto(`${base}/settings/profile`);
-  await expect(page.locator("#email")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Выйти из аккаунта", exact: true })).toBeVisible();
   await page.goto(`${base}/chats/${chatId}`);
-  await expect(page.locator("#email")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Сообщение", exact: true })).toBeVisible();
   const protectedPaths = ["/api/v1/me", "/api/auth/get-session", "/media/private.png", "/.well-known/openid-configuration"];
   for (const path of protectedPaths) {
     const ok = await page.evaluate(async path => { try { await fetch(path); return true; } catch { return false; } }, path);
@@ -109,13 +109,13 @@ try {
   await expect(composer).toHaveValue("Unsaved test draft");
   let otherNavigations = 0;
   other.on("framenavigated", frame => { if (frame === other.mainFrame()) otherNavigations++; });
-  await page.getByRole("button", { name: "Обновить", exact: true }).click();
+  await Promise.all([page.waitForEvent("framenavigated",frame=>frame===page.mainFrame()),page.getByRole("button", { name: "Обновить", exact: true }).click()]);
   await expect(page.getByRole("textbox", { name: "Сообщение", exact: true })).toHaveValue("Unsaved test draft");
   await expect(page.getByRole("button", { name: "Обновить", exact: true })).toHaveCount(0);
   assert.equal(otherNavigations, 0, "Updating one tab must not reload another");
   assert.ok(await page.evaluate(name => caches.has(name), cacheName), "Old tab keeps its assets");
   await expect(other.getByRole("button", { name: "Обновить", exact: true })).toBeVisible();
-  await other.getByRole("button", { name: "Обновить", exact: true }).click();
+  await Promise.all([other.waitForEvent("framenavigated",frame=>frame===other.mainFrame()),other.getByRole("button", { name: "Обновить", exact: true }).click()]);
   await expect(other.getByRole("button", { name: "Обновить", exact: true })).toHaveCount(0);
   await expect.poll(() => page.evaluate(async () => (await caches.keys()).filter(k => k.startsWith("beacon-shell-"))))
     .toEqual([`beacon-shell-${versions[1].version}`]);

@@ -38,7 +38,7 @@ test("service worker displays only freshly authorized messages and opens their c
   assert.equal(requests,2);
   await dispatch("notificationclick",{notification:{data:{chatId},close:()=>{}}});
   assert.equal(opened[0].type,"beacon:open-chat");assert.equal(opened[0].chatId,chatId);
-  for(const path of ["/settings","/settings/profile","/settings/security","/settings/notifications","/settings/about"]){
+  for(const path of ["/settings","/settings/profile","/settings/security","/settings/notifications","/settings/about","/settings/stickers","/settings/data"]){
     client.url=`https://beacon.example.com${path}`;
     await dispatch("notificationclick",{notification:{data:{chatId},close:()=>{}}});
     assert.equal(opened.at(-1).type,"beacon:open-chat","reuse an existing settings window");

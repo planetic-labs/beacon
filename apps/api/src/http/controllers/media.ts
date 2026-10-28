@@ -1,3 +1,4 @@
+import { attachmentLimits } from "@beacon/shared";
 import { thumbnail } from "@api/modules/media/thumbnail";
 import { Readable } from "node:stream";
 import { actor } from "@api/lib/http";
@@ -15,7 +16,7 @@ export async function GET(
     const id = z.uuid().parse(fileId);
     // Chat attachments require current membership, including forwarded copies.
     const [file] = await rows(
-      sql`select f.* from media_file f where f.id=${id} and (exists(select 1 from "user" u where u.image=${"/media/" + id}) or exists(select 1 from chat c join chat_member cm on cm.chat_id=c.id where c.image=${"/media/" + id} and cm.user_id=${u.id}) or exists(select 1 from sticker s where s.file_id=f.id) or exists(select 1 from message m join chat_member cm on cm.chat_id=m.chat_id where m.deleted_at is null and m.type in ('photo','sticker','audio','circle','file','video') and (m.content->>'fileId'=${id} or (m.content->'fileIds') ? ${id}) and cm.user_id=${u.id}))`,
+      sql`select f.* from media_file f where f.id=${id} and (exists(select 1 from "user" u where u.image=${"/media/" + id}) or exists(select 1 from chat c join chat_member cm on cm.chat_id=c.id where c.image=${"/media/" + id} and cm.user_id=${u.id}) or exists(select 1 from sticker s join sticker_pack p on p.id=s.pack_id where s.file_id=f.id and p.deleted_at is null and (p.active or p.owner_id=${u.id} or ${u.role === "admin"})) or exists(select 1 from message m join chat_member cm on cm.chat_id=m.chat_id where m.deleted_at is null and m.type in ('photo','sticker','audio','circle','file','video') and (m.content->>'fileId'=${id} or (m.content->'fileIds') ? ${id}) and cm.user_id=${u.id}))`,
     );
     if (!file) return new Response(null, { status: 404 });
 
@@ -27,13 +28,13 @@ export async function GET(
       "Content-Security-Policy": "default-src 'none'; sandbox",
     };
     if(new URL(request.url).searchParams.get("thumbnail")==="1"){
-      if(!["image/jpeg","image/png","image/webp"].includes(file.mime)||file.size>10*1024*1024)return new Response(null,{status:404});
+      if(!["image/jpeg","image/png","image/webp"].includes(file.mime)||file.size>attachmentLimits.file)return new Response(null,{status:404});
       const preview=await thumbnail(id,file.storage_key);
       return new Response(new Uint8Array(preview),{headers:{"Content-Type":"image/webp","Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"}});
     }
     if (file.original_name || new URL(request.url).searchParams.has("download")) {
       // Untrusted formats are downloads, never same-origin executable documents.
-      const disposition = !new URL(request.url).searchParams.has("download") && ["video/mp4","video/webm"].includes(file.mime) ? "inline" : "attachment";
+      const disposition = !new URL(request.url).searchParams.has("download") && ["video/mp4","video/webm","image/jpeg","image/png","image/webp"].includes(file.mime) ? "inline" : "attachment";
       headers["Content-Disposition"] = `${disposition}; filename="download"; filename*=UTF-8''${encodeURIComponent(file.original_name??`photo-${id}.${file.mime==="image/png"?"png":file.mime==="image/webp"?"webp":file.mime==="image/jpeg"?"jpg":"bin"}`).replace(/['()*]/g,c=>`%${c.charCodeAt(0).toString(16)}`)}`;
     }
     let range;

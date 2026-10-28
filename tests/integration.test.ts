@@ -440,6 +440,29 @@ test("closed registration, chat invariants, access control, blocking and OIDC", 
   ).json();
   assert.equal(after.messages.length, 50);
   assert.equal(after.hasMore, false);
+  // Device snapshots retain separate read/unread windows, including old edits and tombstones.
+  const offlineChat = (await (await call("chats", "POST", {kind:"group",title:"Offline fixture",userIds:[ids[2]]}, one)).json()).id;
+  await db.execute(sql`insert into message(chat_id,author_id,client_message_id,content,created_at)
+    select ${offlineChat},${ids[2]},uuidv7(),jsonb_build_object('text','offline-'||n),'2020-01-01'::timestamptz+n*interval '1 second' from generate_series(1,1300) n`);
+  await db.execute(sql`update chat_member set last_read_at='2020-01-01'::timestamptz+interval '150 seconds' where chat_id=${offlineChat} and user_id=${ids[1]}`);
+  const snapshot = await (await call(`chats/${offlineChat}/offline`,"GET",undefined,one)).json();
+  assert.equal(snapshot.messages.length,1100);
+  assert.equal(snapshot.messages[0].content.text,"offline-51");
+  assert.equal(snapshot.messages[99].content.text,"offline-150");
+  assert.equal(snapshot.messages[100].content.text,"offline-301");
+  assert.equal(snapshot.hasMoreRead,true);assert.equal(snapshot.hasMoreUnread,true);
+  assert.equal(snapshot.unreadStartId,snapshot.messages[100].id);
+  const unreadChats=await (await call("chats","GET",undefined,one)).json();
+  assert.equal(unreadChats.find((chat:any)=>chat.id===offlineChat).lastUnreadMessageId,snapshot.messages.at(-1).id);
+  assert.equal((await call(`chats/${offlineChat}/offline`,"GET",undefined,cookie)).status,403);
+  await db.execute(sql`update message set content='{"text":"edited offline"}'::jsonb,edited_at=now() where id=${snapshot.messages[0].id}`);
+  await db.execute(sql`update message set type='deleted',content='{}'::jsonb,deleted_at=now() where id=${snapshot.messages[1].id}`);
+  const updatedSnapshot=await (await call(`chats/${offlineChat}/offline`,"GET",undefined,one)).json();
+  assert.equal(updatedSnapshot.messages[0].content.text,"edited offline");
+  assert.equal(updatedSnapshot.messages[1].type,"deleted");
+  await db.execute(sql`update chat_member set last_read_at='2020-01-01'::timestamptz+interval '1250 seconds' where chat_id=${offlineChat} and user_id=${ids[1]}`);
+  const afterRead=await (await call(`chats/${offlineChat}/offline`,"GET",undefined,one)).json();
+  assert.equal(afterRead.messages.length,150);assert.equal(afterRead.messages[0].content.text,"offline-1151");assert.equal(afterRead.hasMoreUnread,false);
   // Avatar bytes remain on the local storage backend and require authentication.
   const sharp = createRequire(new URL("../apps/api/package.json", import.meta.url))("sharp") as typeof import("../apps/api/node_modules/sharp").default;
   const png = await sharp({ create: { width: 1, height: 1, channels: 4, background: "transparent" } }).png().toBuffer();
@@ -563,7 +586,20 @@ test("closed registration, chat invariants, access control, blocking and OIDC", 
   async function stickerRequest(path = "", method = "GET", body?: unknown, session = cookie) {
     return http(new Request(`${base}/api/stickers${path}`, { method, headers: { origin: base, cookie: session, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) }));
   }
-  assert.equal((await stickerRequest("", "POST", { name: "Forbidden" }, one)).status, 403);
+  const ownCreated = await stickerRequest("", "POST", { name: "Личный набор", ownerId:ids[0] }, one);
+  assert.equal(ownCreated.status,200);
+  const ownPackId=(await ownCreated.json()).id;
+  const ownCatalog=await(await stickerRequest("?scope=mine","GET",undefined,one)).json();
+  assert.equal(ownCatalog.find((pack:{id:string})=>pack.id===ownPackId).ownerId,ids[1],"owner cannot be forged");
+  assert.equal((await stickerRequest("?scope=all","GET",undefined,one)).status,403);
+  assert.equal((await stickerRequest(`/${ownPackId}`,"PATCH",{name:"Чужой"},two)).status,403);
+  assert.equal((await stickerRequest(`/${ownPackId}`,"DELETE",undefined,two)).status,403);
+  assert.equal((await stickerRequest(`/${ownPackId}`,"PATCH",{active:false},one)).status,200);
+  assert.equal((await(await stickerRequest("?scope=mine","GET",undefined,one)).json()).find((pack:{id:string})=>pack.id===ownPackId).active,false);
+  assert.equal((await(await stickerRequest("?scope=mine","GET",undefined,cookie)).json()).some((pack:{id:string})=>pack.id===ownPackId),false,"administrator personal settings only show own packs");
+  assert.equal((await(await stickerRequest("?scope=all","GET",undefined,cookie)).json()).some((pack:{id:string})=>pack.id===ownPackId),true);
+  assert.equal((await stickerRequest(`/${ownPackId}`,"DELETE",undefined,one)).status,200);
+  assert.equal((await stickerRequest(`/${ownPackId}`,"PATCH",{active:true},one)).status,404);
   const createdPack = await stickerRequest("", "POST", { name: "Тестовый набор" });
   assert.equal(createdPack.status, 200, await createdPack.clone().text());
   const packId = (await createdPack.json()).id;
@@ -609,7 +645,7 @@ test("closed registration, chat invariants, access control, blocking and OIDC", 
   assert.equal((await stickerRequest(`/${packId}`, "PATCH", { active: false }, one)).status, 403);
   assert.equal((await stickerRequest(`/${packId}`, "PATCH", { active: false })).status, 200);
   assert.equal((await (await stickerRequest("", "GET", undefined, one)).json()).some((p: { id: string }) => p.id === packId), false);
-  assert.equal((await (await stickerRequest()).json()).find((p: { id: string; active: boolean }) => p.id === packId).active, false);
+  assert.equal((await (await stickerRequest("?scope=all")).json()).find((p: { id: string; active: boolean }) => p.id === packId).active, false);
   assert.equal((await call(`chats/${chatId}/messages`, "POST", { clientMessageId: v7(), stickerId: sticker.id, text: "" }, one)).status, 400);
   const stickerReplay = await call(`chats/${chatId}/messages`, "POST", { clientMessageId: stickerClientId, stickerId: sticker.id, text: "" }, one);
   assert.equal((await stickerReplay.json()).id, stickerMessageId);
@@ -660,6 +696,22 @@ test("closed registration, chat invariants, access control, blocking and OIDC", 
   assert.equal((await http(new Request(`${base}/media/${sticker.fileId}`))).status, 404);
   const replayDeleted = await call(`chats/${chatId}/messages`, "POST", { clientMessageId: stickerClientId, stickerId: sticker.id, text: "" }, one);
   assert.equal((await replayDeleted.json()).id, stickerMessageId);
+  // Owners can upload, edit and delete an entire pack; historic media survives.
+  const userPack=(await(await stickerRequest("","POST",{name:"Мои стикеры"},one)).json()).id;
+  const ownUpload=new FormData();ownUpload.append("file",new File([png],"own.png",{type:"image/png"}));
+  assert.equal((await http(new Request(`${base}/api/stickers/${userPack}`,{method:"POST",headers:{origin:base,cookie:one},body:ownUpload}))).status,200);
+  let managed=(await(await stickerRequest("?scope=mine","GET",undefined,one)).json()).find((p:{id:string})=>p.id===userPack);
+  const userSticker=managed.stickers[0];
+  assert.equal((await stickerRequest(`/${userPack}/stickers/${userSticker.id}`,"PATCH",{label:"Мой",emojis:["🙂"],keywords:["свой"]},one)).status,200);
+  assert.equal((await stickerRequest(`/${userPack}/stickers/${userSticker.id}`,"DELETE",undefined,two)).status,403);
+  const sentOwn=await call(`chats/${chatId}/messages`,"POST",{clientMessageId:v7(),stickerId:userSticker.id,text:""},two);assert.equal(sentOwn.status,200);
+  assert.equal((await stickerRequest(`/${userPack}`,"PATCH",{active:false},one)).status,200);
+  assert.equal((await(await stickerRequest("","GET",undefined,two)).json()).some((p:{id:string})=>p.id===userPack),false);
+  assert.equal((await stickerRequest(`/${userPack}`,"PATCH",{active:true},cookie)).status,200,"admin can manage another owner's pack");
+  assert.equal((await stickerRequest(`/${userPack}`,"DELETE",undefined,one)).status,200);
+  assert.equal((await(await stickerRequest("?scope=mine","GET",undefined,one)).json()).some((p:{id:string})=>p.id===userPack),false);
+  assert.equal((await call(`chats/${chatId}/messages`,"POST",{clientMessageId:v7(),stickerId:userSticker.id,text:""},two)).status,400);
+  assert.equal((await http(new Request(`${base}/media/${userSticker.fileId}`,{headers:{cookie:two}}))).status,200,"deleting packs preserves messages");
   for (const kind of ["audio", "circle"] as const) {
     const bytes = await recordingFixture(kind);
     const clientId = v7();

@@ -22,7 +22,7 @@ In production, it serves the Vite build. API and private media never use SPA
 fallback. Vite's file access is restricted to the web app, shared package and
 installed dependencies. The client build has no server environment variables.
 
-TanStack Router owns `/`, `/chats/$chatId`, `/people`, `/settings`, `/settings/profile`, `/settings/security`, `/settings/notifications`, `/settings/about`, `/admin` and
+TanStack Router owns `/`, `/chats/$chatId`, `/people`, `/settings`, `/settings/profile`, `/settings/security`, `/settings/notifications`, `/settings/stickers`, `/settings/data`, `/settings/about`, `/admin` and
 `/consent`. Legacy `/profile` links redirect to `/settings/profile`. Settings reuse the administration three-column shell with a separate section list available to every user; mobile navigation switches between that list and its selected page. The app layout stays mounted during section navigation, retaining
 drafts and the socket connection. Existing `/?chat=...` notification links remain
 supported. OAuth login query parameters are preserved until authentication.
@@ -46,9 +46,10 @@ service workers and browser caches.
 
 Only known application navigations receive the cached generic HTML shell.
 Authentication, APIs, user media, discovery endpoints and non-GET requests are
-never stored in Cache Storage or replaced by that shell. Offline shell startup
-does not grant access to messages or restore an expired session. The next online
-API request still checks the session and permissions.
+never stored in Cache Storage or replaced by that shell. Account-scoped IndexedDB
+storage below separately enables offline reading after a successful online login.
+It does not restore a server session; online API requests still check authentication
+and membership.
 
 An incomplete precache installation is discarded. A complete new version waits
 until the user chooses Update or all old tabs close. The update button preserves
@@ -65,7 +66,7 @@ static server with synthetic API data. It needs no database or deployment secret
 
 ### Stickers
 
-Sticker packs are managed by administrators through `/api/stickers` and the dedicated `/admin/stickers` screen, selected from the administration sidebar. Administration uses a three-column desktop layout (global navigation, section navigation, content); mobile navigation switches between the section list and its content. User administration, membership groups and group chats have their own `/admin/users`, `/admin/groups` and `/admin/chats` routes. PNG/JPEG/WebP originals accept up to ten files of 10 MiB each. Sharp validates and decodes images (up to 16 megapixels), applies orientation, preserves transparency and aspect ratio, fits them within 512 × 512 without enlargement, strips metadata, and stores only WebP output through the existing private storage adapter. Animated sources are rejected until animated stickers are supported. Pack metadata and sticker records live in `sticker_pack` and `sticker`. Disabling a pack hides it from regular users' selection and prevents new sends. Existing messages and forwards retain their file references and remain readable. Administrators can rename packs and remove individual stickers from a pack. Removing a sticker deletes its catalog entry, prevents new sends, and keeps its media for historical messages; access to that media then requires membership of a chat containing it. Authenticated users can read sticker assets because packs form a shared application catalog.
+Users manage their own sticker packs in `/settings/stickers`; administrators have the same personal screen and additionally manage all owners' packs in `/admin/stickers`. `/api/stickers?scope=mine` returns the current account's enabled and disabled packs, while `scope=all` requires an administrator. The default catalog contains only enabled, non-deleted packs for everyone, including administrators. Every write rechecks the active account and locks the pack before authorizing its owner or an administrator; uploads repeat this check after processing. Pack creation always assigns the authenticated user, ignoring client-supplied ownership. Legacy ownership is inferred only for packs whose existing sticker files all have the same uploader; ambiguous or empty legacy packs remain administrator-managed. Administration uses a three-column desktop layout (global navigation, section navigation, content); mobile navigation switches between the section list and its content. User administration, membership groups and group chats have their own `/admin/users`, `/admin/groups` and `/admin/chats` routes. PNG/JPEG/WebP originals accept up to ten files of 10 MiB each. Sharp validates and decodes images (up to 16 megapixels), applies orientation, preserves transparency and aspect ratio, fits them within 512 × 512 without enlargement, strips metadata, and stores only WebP output through the existing private storage adapter. Animated sources are rejected until animated stickers are supported. Pack metadata and sticker records live in `sticker_pack` and `sticker`. Disabling a pack hides it from everyone's selection and prevents new sends. Existing messages and forwards retain their file references and remain readable. Owners and administrators can rename, enable/disable and delete packs, edit metadata, and remove individual stickers. Pack deletion requires UI confirmation, soft-deletes the pack, removes its catalog stickers and queues reference-aware media cleanup. Removing a sticker deletes its catalog entry, prevents new sends, and keeps its media for historical messages; access to that media then requires membership of a chat containing it. Authenticated users can read enabled catalog assets; owners and administrators can also preview disabled packs for management. Historical media always remains available through current chat membership.
 
 A `sticker` message stores a server-resolved sticker ID, media ID and label. Clients cannot replace the label or media reference, and sticker messages cannot be edited. Replies, reactions, forwarding and delivery reuse the message service. Recent selections are stored per account in the browser, capped at 24 entries and filtered against currently enabled packs. The targeted UI check is `pnpm exec tsx tests/browser-stickers.ts` inside the browser test image; it uses synthetic API data at desktop and mobile widths.
 
@@ -98,6 +99,8 @@ Mentions use a bounded structured list of `{ userId, start, length }` in text/ph
 ## File attachments and message deletion
 
 Documents/archives are limited to 100 MiB, video files to 500 MiB, one attachment per message. An encapsulated `@fastify/multipart` route authenticates before parsing, requires metadata before the file stream and applies bounded fields/parts/file sizes, upload concurrency and time limits. Upload and private HTTP range delivery stream through the storage adapter with backpressure. The Fetch/Fastify bridge streams response bodies rather than accumulating large videos. Browser upload has progress, cancellation and a stable client UUID for retries. Captions are optional; existing text drafts are retained. There is no video transcoding: MP4/WebM containers may play in the browser; other formats remain downloads.
+
+JPEG, PNG and WebP sent through the file picker remain file attachments with their original bytes, filename and download link. The upload route identifies them from signature bytes, ignoring the client MIME and filename. Their trusted image MIME enables a bounded WebP preview, the existing photo viewer and the Photo attachment tab, including forwards. Originals are served inline only for the explicit safe raster/video allowlist; an explicit download still uses attachment disposition. Preview failure falls back to the file link. SVG/HTML and other unknown formats remain opaque downloads. Composer buttons expose immediate CSS hover/focus tooltips without changing their accessible names or placement.
 
 Original names are display metadata only and never become filesystem paths. Documents/archives use `application/octet-stream` with attachment disposition, no-sniff and a sandbox CSP. Video downloads retain a download link. Every full/range request rechecks current access; private attachments are excluded from public browser caches.
 
@@ -147,3 +150,51 @@ Settings keep profile editing, passkey management, push preferences and applicat
 Passkey registration preserves Better Auth's fresh-session requirement. An explicit `SESSION_NOT_FRESH` response opens email confirmation for the current account. The standard sign-in OTP endpoint creates a fresh session without a manual sign-out. A separate Continue button starts WebAuthn after confirmation to retain a user gesture; cancellation leaves the app open. Other authorization failures do not trigger this flow. Registration options use native fetch for Safari compatibility; verification remains on the authentication library's server endpoints.
 
 The administration group list includes the built-in Administrator and User roles alongside additional membership groups. System groups derive their members from user roles, explain their fixed privileges and link to user management for role assignment. They are not editable membership-group records and do not change integration group claims.
+
+
+Message rows show every sender's full name and avatar, including the current account, aligned with a header containing the timestamp and outgoing delivery indicator. Server-accepted messages show no check until acknowledged by a recipient client; delivered is one grey check, and read by all eligible recipients is two blue checks. Delivery currently follows the authenticated client receiving an updated chat list, on any device; merely accepting or displaying a push does not advance delivery receipts. Partial group delivery/read counts remain available through the accessible label, tooltip and read-details dialog. Long sender names wrap independently of the timestamp; selection checkboxes retain their own column. Pending messages show the sender and keep their existing queued/sending/error text until the server confirms sending.
+
+## Device data, offline text and outbox
+
+Dexie manages `beacon-device-v1` IndexedDB. Account-prefixed cache, draft, outbox
+and pending-read records are separate. No session token is copied into IndexedDB.
+A local account pointer restores the most recently authenticated profile, chat
+list, people and downloaded text immediately while the session is rechecked.
+An authenticated account change, explicit logout or an HTTP 401 clears the old
+account data. A storage event stops other tabs from displaying the previous account.
+A network failure permits cached reading, but never authorizes a queued write.
+Offline devices cannot learn about blocking or membership changes until reconnect.
+
+`GET /api/v1/chats/:id/offline` checks membership and returns an authoritative,
+bounded snapshot: the latest 100 messages at/before the current user's server read
+position and the latest 1000 after it, plus separate truncation flags and the start
+of the unread window. The read position is captured once for both windows. These
+are timeline windows, so they also contain the user's own messages and deletion
+tombstones. Complete window replacement reconciles old edits, deletion, reactions,
+reply previews and author changes without a new change-log service or migration.
+The ordinary paginated history API continues to expose the full online history.
+Downloaded media bytes are excluded; attachment metadata and captions remain.
+
+Background synchronization prioritizes the selected chat, then recent chats.
+Initial startup, reconnect and foreground visibility reconcile all accessible
+chats. Chat events refresh affected windows, with a five-minute recovery pass
+while the page is visible. It runs in the open application, not as a guaranteed
+closed-PWA background job. Removed memberships purge local history, drafts,
+outbox and pending read positions. Offline read positions are replayed before
+new windows are downloaded, allowing the read window to shrink after reading.
+
+Text submissions commit their UUIDv7 clientMessageId and payload to IndexedDB
+before clearing the composer. The server's existing unique author/client ID and
+idempotent send handler prevent duplicates after an ambiguous response, reload,
+retry or concurrent tabs. Replay requires a fresh network-only session check.
+Transient failures retry with a delay; validation/access failures require explicit
+retry. Drafts persist independently and keep the existing revision-based server
+synchronization. Existing sticker/forward pending items remain per-tab only.
+
+Settings → Данные на устройстве reports approximate serialized data size and
+counts. Clearing downloaded history preserves drafts and queued text, and pauses
+bulk downloading until resumed. Subsequently opened chats still cache their own
+window. IndexedDB/quota failures are reported; a failed durable queue write leaves
+text in the composer. Clearing browser/site data can remove IndexedDB, including
+unsent text. Production/preview precache supports a full offline reload; development
+continues to use Vite and needs the server to reload its code.
