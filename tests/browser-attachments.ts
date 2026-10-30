@@ -1,3 +1,4 @@
+import { messageAction } from "./message-menu";
 import { chromium, expect } from "@playwright/test";
 import { createServer } from "../apps/web/node_modules/vite/dist/node/index.js";
 import { fileURLToPath } from "node:url";
@@ -49,7 +50,7 @@ try{
   await picker.setInputFiles({name:"Документ.pdf",mimeType:"application/pdf",buffer:Buffer.from("test-document")});
   const dialog=page.getByRole("dialog");await expect(dialog).toContainText("100 МБ");await page.getByLabel("Подпись к файлу").fill("Подпись документа");await dialog.getByRole("button",{name:"Отправить файл",exact:true}).click();
   await expect(page.locator(".message-file")).toContainText("Документ.pdf");await expect(page.locator(".message-file")).toContainText("Подпись документа");assert.equal(uploaded,true);
-  await page.locator(".message-group").getByRole("button",{name:"Удалить",exact:true}).click();await expect(dialog).toContainText("у всех участников");await dialog.getByRole("button",{name:"Удалить",exact:true}).click();await expect(page.locator(".deleted-message")).toHaveText("Сообщение удалено");await expect(page.locator(".message-file")).toHaveCount(0);await expect(page.locator(".message-tools")).toHaveCount(0);
+  await messageAction(page, page.locator(".message-group"), "Удалить");await expect(dialog).toContainText("у всех участников");await dialog.getByRole("button",{name:"Удалить",exact:true}).click();await expect(page.locator(".deleted-message")).toHaveCount(0);await expect(page.locator(".message-group")).toHaveCount(0);await expect(page.locator(".message-file")).toHaveCount(0);await expect(page.locator(".message-tools")).toHaveCount(0);
   await picker.setInputFiles({name:"Видео.mp4",mimeType:"video/mp4",buffer:Buffer.from("video-fixture")});await expect(dialog).toContainText("500 МБ");await dialog.getByRole("button",{name:"Отправить файл",exact:true}).click();await expect(page.locator(".message-video")).toBeVisible();await expect(page.locator(".message-file")).toContainText("Видео.mp4");
   await picker.setInputFiles({name:"Оригинальное фото.png",mimeType:"image/png",buffer:png});
   await dialog.getByRole("button",{name:"Отправить файл",exact:true}).click();

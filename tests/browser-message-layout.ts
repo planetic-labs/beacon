@@ -1,3 +1,4 @@
+import { messageAction } from "./message-menu";
 // Layout and status checks use synthetic accounts and never touch dev messages.
 import {chromium,expect} from "@playwright/test";
 import {createServer} from "../apps/web/node_modules/vite/dist/node/index.js";
@@ -38,17 +39,43 @@ try{
   await expect(delivered.locator(".delivery-status svg")).toHaveClass(/lucide-check(?:\s|$)/);
   await expect(read.locator(".delivery-status svg")).toHaveClass(/lucide-check-check/);
   assert.notEqual(await read.locator(".delivery-status").evaluate(node=>getComputedStyle(node).color),await delivered.locator(".delivery-status").evaluate(node=>getComputedStyle(node).color));
-  for(const message of messages){
+  for(const message of messages.slice(0,2)){
    const row=page.locator(`#message-${message.id}`);
    await expect(row.locator(".author")).toHaveText(message.authorName);
    const avatar=await row.locator(".message-avatar").boundingBox(),author=await row.locator(".author").boundingBox(),meta=await row.locator(".message-meta").boundingBox(),bubble=await row.locator(".bubble").boundingBox();
    assert.ok(avatar&&author&&meta&&bubble);assert.ok(Math.abs(avatar.y-author.y)<=2);assert.ok(Math.abs(meta.y-author.y)<=2);
    assert.ok(meta.x>=author.x+author.width-1);assert.ok(bubble.y>=author.y+author.height);
   }
+  for(const message of messages.slice(2)){
+   const row=page.locator(`#message-${message.id}`);
+   await expect(row.locator(".author")).toHaveCount(0);
+   await expect(row.locator(".message-avatar")).toBeEmpty();
+   const bubble=await row.locator(".bubble").boundingBox(),meta=await row.locator(".message-meta").boundingBox(),first=await read.locator(".bubble").boundingBox();
+   assert.ok(bubble&&meta&&first);assert.ok(Math.abs(first.x-bubble.x)<2);assert.ok(meta.x>=bubble.x+bubble.width);assert.ok(Math.abs(meta.y-bubble.y)<12);
+  }
+  const foreign=page.locator(`#message-${id(10)}`), menu=page.getByRole("menu",{name:"Действия с сообщением",exact:true});
+  if(width>780){
+   await page.mouse.move(0,0);assert.equal(await foreign.locator(".message-hover-tools").evaluate(node=>getComputedStyle(node).opacity),"0");
+   await foreign.locator(".message-group").hover();assert.equal(await foreign.locator(".message-hover-tools").evaluate(node=>getComputedStyle(node).opacity),"1");
+   await foreign.getByRole("button",{name:"Ответить на сообщение",exact:true}).click();
+   await expect(page.locator(".composer-context")).toContainText(peer.name);
+   await page.getByRole("button",{name:"Отменить контекст сообщения"}).click();
+   await sent.hover();await sent.getByRole("button",{name:"Редактировать сообщение",exact:true}).click();
+   await expect(page.getByLabel("Сообщение",{exact:true})).toHaveValue("Сообщение 3");
+   await page.getByRole("button",{name:"Отменить контекст сообщения"}).click();
+  }
+  await foreign.locator(".message-group").hover();await foreign.getByRole("button",{name:"Действия с сообщением",exact:true}).click();
+  await expect(menu).toBeVisible();await expect(menu.getByRole("menuitem",{name:"Удалить",exact:true})).toHaveCount(0);await expect(menu.getByRole("menuitem",{name:"Изменить",exact:true})).toHaveCount(0);
+  await menu.getByRole("menuitem",{name:"Ответить",exact:true}).click();await expect(page.locator(".composer-context")).toContainText(peer.name);await page.getByRole("button",{name:"Отменить контекст сообщения"}).click();
+  await sent.locator(".bubble-text").click({button:"right"});await expect(menu).toBeVisible();await expect(menu.getByRole("menuitem",{name:"Изменить",exact:true})).toBeVisible();await expect(menu.getByRole("menuitem",{name:"Удалить",exact:true})).toBeVisible();
+  await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-message-menu-${width}.png`});
+  const popup=await page.locator(".message-action-popup").boundingBox();assert.ok(popup&&popup.x>=0&&popup.x+popup.width<=width+1&&popup.y>=0&&popup.y+popup.height<=1001,"menu fits viewport");
+  await page.keyboard.press("End");await expect(menu.getByRole("menuitem",{name:"Удалить",exact:true})).toBeFocused();await page.keyboard.press("Escape");await expect(menu).toHaveCount(0);await expect(sent.getByRole("button",{name:"Действия с сообщением",exact:true})).toBeFocused();
+  await sent.getByRole("button",{name:"Действия с сообщением",exact:true}).click();await page.getByLabel("Сообщение",{exact:true}).click();await expect(menu).toHaveCount(0);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-message-heading-${width}.png`});
-  await sent.getByRole("button",{name:"Выбрать это сообщение",exact:true}).click();
-  const selectedRow=sent.locator(".message-group");await expect(selectedRow).toHaveClass(/selectable-message/);
+  await messageAction(page, read, "Выбрать это сообщение");
+  const selectedRow=read.locator(".message-group");await expect(selectedRow).toHaveClass(/selectable-message/);
   const checkbox=await selectedRow.locator(".message-selection").boundingBox(),avatar=await selectedRow.locator(".message-avatar").boundingBox(),author=await selectedRow.locator(".author").boundingBox();
   assert.ok(checkbox&&avatar&&author);assert.ok(checkbox.x+checkbox.width<=avatar.x);assert.ok(avatar.x+avatar.width<=author.x);
   partial=true;await page.reload();

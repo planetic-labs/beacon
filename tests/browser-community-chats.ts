@@ -1,3 +1,4 @@
+import { messageAction } from "./message-menu";
 // Safe synthetic UI fixtures for pins, saved notes, presence and multiple forwarding.
 import { chromium, expect } from "@playwright/test";
 import { createServer } from "../apps/web/node_modules/vite/dist/node/index.js";
@@ -37,13 +38,13 @@ try{
    await route.fulfill({json:data});
   });
   await page.goto(`${base}/chats/${chatId}`);await expect(page.locator(".chat-header-subtitle")).toHaveText("В сети");
-  await page.locator(`#message-${id(10)}`).getByRole("button",{name:"Закрепить сообщение",exact:true}).click();await expect(page.locator(".pinned-strip")).toContainText("Сообщение 10");
-  await page.getByRole("button",{name:"Все закреплённые сообщения"}).click();await expect(page.getByRole("dialog")).toContainText("Сообщение 10");await page.getByRole("dialog").getByRole("button",{name:"Открепить",exact:true}).click();await expect(page.locator(".pinned-strip")).toHaveCount(0);await expect(page.locator(`#message-${id(10)}`).getByRole("button",{name:"Закрепить сообщение",exact:true})).toBeVisible();
+  await messageAction(page, page.locator(`#message-${id(10)}`), "Закрепить сообщение");await expect(page.locator(".pinned-strip")).toContainText("Сообщение 10");
+  await page.getByRole("button",{name:"Все закреплённые сообщения"}).click();await expect(page.getByRole("dialog")).toContainText("Сообщение 10");await page.getByRole("dialog").getByRole("button",{name:"Открепить",exact:true}).click();await expect(page.locator(".pinned-strip")).toHaveCount(0);await page.locator(`#message-${id(10)}`).hover();await page.locator(`#message-${id(10)}`).getByRole("button",{name:"Действия с сообщением",exact:true}).click();await expect(page.getByRole("menuitem",{name:"Закрепить сообщение",exact:true})).toBeVisible();await page.keyboard.press("Escape");
   await page.getByRole("button",{name:"Выбрать сообщения",exact:true}).click();await page.getByRole("checkbox").nth(0).check();await page.getByRole("checkbox").nth(1).check();await expect(page.locator(".selection-toolbar")).toContainText("Выбрано: 2");
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),"selection layout has no horizontal overflow");await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-community-selection-${width}.png`});
   await page.locator(".selection-toolbar").getByRole("button",{name:"Переслать",exact:true}).click();await page.getByRole("dialog").getByRole("button",{name:"Избранное",exact:true}).click();await expect.poll(()=>batch.length).toBe(2);
   if(width<780)await page.getByRole("button",{name:"Назад к списку",exact:true}).click();
-  await page.getByRole("button",{name:"Избранное",exact:true}).click();await expect(page.locator(".chat-header-title")).toHaveText("Избранное");await expect(page.locator(".forwarded")).toHaveCount(2);await expect(page.locator(".delivery-status")).toHaveCount(0);
+  await page.getByRole("button",{name:"Избранное",exact:true}).click();await expect(page.locator(".chat-header-title")).toHaveText("Избранное");await expect(page.locator(".chat-rows").getByRole("button",{name:"Избранное",exact:true})).toHaveCount(0);await expect(page.locator(".saved-chat-button")).toHaveAttribute("aria-pressed","true");await expect(page.locator(".forwarded")).toHaveCount(2);await expect(page.locator(".delivery-status")).toHaveCount(0);
   await page.getByLabel("Сообщение",{exact:true}).fill("Личная заметка");await page.getByRole("button",{name:"Отправить сообщение",exact:true}).click();await expect(page.locator(".bubble-text",{hasText:"Личная заметка"})).toBeVisible();
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),"no horizontal overflow");assert.deepEqual(errors,[]);await expect(page.getByRole("alert")).toHaveCount(0);
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-community-${width}.png`});await context.close();console.log(`PASS saved, pins, presence and multi-forward UI ${width}px`);

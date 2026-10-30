@@ -2,14 +2,15 @@ import { MentionText } from "./chat-features";
 import { fileSize, type Mention } from "@beacon/shared";
 import { useRef, useState, type ReactNode } from "react";
 import { Icon } from "./icon";
+import { MediaPlayer, usePlaybackPolicy } from "./media-player";
 type Renderer = (content: Record<string, unknown>, text: ReactNode, photo?: (index:number)=>void) => ReactNode;
 // A new content type registers its renderer here and its validator/preview in
 // packages/shared/src/messages.ts. Membership, delivery and reactions remain shared.
 const renderers: Record<string, Renderer> = {
   deleted: () => <span className="deleted-message">Сообщение удалено</span>,
   file: (content,text,photo) => <FileMessage content={content} caption={text} photo={photo}/>,
-  video: (content,text) => <>{String(content.mime).startsWith("video/")&&<video className="message-video" controls playsInline preload="none" src={`/media/${content.fileId}`} aria-label={String(content.name??"Видео")} />}<FileMessage content={content} caption={text}/></>,
-  audio: content => <audio className="message-audio" controls preload="metadata" src={`/media/${content.fileId}`} aria-label="Голосовое сообщение" />,
+  video: (content,text) => <>{String(content.mime).startsWith("video/")&&<MediaPlayer className="message-video" src={`/media/${content.fileId}`} title={String(content.name??"Видео")} />}<FileMessage content={content} caption={text}/></>,
+  audio: content => <MediaPlayer kind="audio" className="message-audio" src={`/media/${content.fileId}`} title="Голосовое сообщение" />,
   circle: content => <CirclePlayer src={`/media/${content.fileId}`} duration={Number(content.duration ?? 0)} />,
   sticker: (content) => <img className="message-sticker" src={`/media/${content.fileId}`} alt={String(content.text || "Стикер")} loading="lazy" />,
   photo: (content, text, photo) => {
@@ -30,6 +31,7 @@ export function renderMessage(type: string, content: Record<string, unknown>, us
 
 export function CirclePlayer({ src, duration = 0 }: { src: string; duration?: number }) {
   const video = useRef<HTMLVideoElement>(null);
+  const exclusivePlay = usePlaybackPolicy();
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [length, setLength] = useState(duration);
@@ -41,7 +43,7 @@ export function CirclePlayer({ src, duration = 0 }: { src: string; duration?: nu
   }
   return <span className={`circle-player ${playing ? "playing" : ""}`}>
     <video ref={video} className="message-circle" src={src} playsInline preload="metadata" aria-label="Видеокружок"
-      onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
+      onPlay={event => { exclusivePlay(event); setPlaying(true); }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
       onTimeUpdate={() => setTime(video.current?.currentTime ?? 0)} onLoadedMetadata={() => { const value = video.current?.duration; if (value && Number.isFinite(value)) setLength(value); }} onError={() => setFailed(true)} />
     <button type="button" className="circle-play" aria-label={playing ? "Приостановить видеокружок" : "Воспроизвести видеокружок"} onClick={() => void toggle()}><Icon name={playing ? "pause" : "play"} /></button>
     <input className="circle-seek" type="range" aria-label="Перемотка видеокружка" min={0} max={length || 1} step={0.1} value={Math.min(time, length || 1)} onChange={event => { if (video.current) video.current.currentTime = Number(event.target.value); }} />

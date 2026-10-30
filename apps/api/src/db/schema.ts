@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   pgTable,
   uuid,
   text,
@@ -461,3 +462,46 @@ export const receiptCheckpoints = pgTable("receipt_checkpoint", {
   check("receipt_checkpoint_kind",sql`${t.kind} in ('delivered','read')`),
   check("receipt_checkpoint_range",sql`${t.fromAt}<${t.throughAt}`),
 ]);
+
+// Managed file spaces share users/authentication with Beacon, never chat permissions.
+export const storageSpaces = pgTable("storage_space", {
+  id: id(), name: text("name").notNull(),
+  personalFolderLabel: text("personal_folder_label").notNull().default("Пользователи"),
+  ownerId: uuid("owner_id").references(() => user.id),
+  provider: text("provider").notNull().default("local"),
+  createdAt: time("created_at"),
+}, t => [uniqueIndex("storage_personal_owner_idx").on(t.ownerId)]);
+export const storageNodes = pgTable("storage_node", {
+  id: id(), spaceId: uuid("space_id").notNull().references(() => storageSpaces.id),
+  parentId: uuid("parent_id").references(():AnyPgColumn=>storageNodes.id), name: text("name").notNull(),
+  filesystemPath: text("filesystem_path"), filesystemMtime: text("filesystem_mtime"),
+  directory: boolean("directory").notNull().default(false),
+  createdBy: uuid("created_by").notNull().references(() => user.id),
+  state: text("state").notNull().default("ready"),
+  size: bigint("size", { mode: "number" }).notNull().default(0),
+  mime: text("mime").notNull().default("application/octet-stream"),
+  sha256: text("sha256"), hashState: text("hash_state").notNull().default("none"),
+  sourceId: uuid("source_id").references(():AnyPgColumn=>storageNodes.id), deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  createdAt: time("created_at"), updatedAt: time("updated_at"),
+}, t => [index("storage_node_parent_idx").on(t.spaceId,t.parentId),
+  uniqueIndex("storage_node_name_idx").on(t.spaceId,sql`coalesce(${t.parentId}, '00000000-0000-0000-0000-000000000000'::uuid)`,t.name).where(sql`${t.deletedAt} is null and ${t.state}<>'missing'`),
+  check("storage_node_state_check",sql`${t.state} in ('uploading','processing','ready','copying','purging','error','missing')`),
+  check("storage_node_size_check",sql`${t.size}>=0`),
+  check("storage_node_parent_check",sql`${t.parentId} is null or ${t.parentId}<>${t.id}`)]);
+export const storageGrants = pgTable("storage_grant", {
+  id: id(), spaceId: uuid("space_id").notNull().references(() => storageSpaces.id),
+  nodeId: uuid("node_id").references(() => storageNodes.id,{onDelete:"cascade"}),
+  groupId: uuid("group_id").notNull().references(() => groups.id),
+  access: text("access").notNull(),
+},t=>[check("storage_grant_access_check",sql`${t.access} in ('read','write')`)]);
+export const storageUserNodes = pgTable("storage_user_node", {
+  userId: uuid("user_id").notNull().references(() => user.id),
+  nodeId: uuid("node_id").notNull().references(() => storageNodes.id,{onDelete:"cascade"}),
+  favorite: boolean("favorite").notNull().default(false),
+  visitedAt: timestamp("visited_at",{withTimezone:true}),
+},t=>[primaryKey({columns:[t.userId,t.nodeId]})]);
+export const storageAudit = pgTable("storage_audit", {
+  id: id(), userId: uuid("user_id").notNull().references(()=>user.id),
+  action: text("action").notNull(), nodeId: uuid("node_id"),
+  spaceId: uuid("space_id").notNull(), createdAt: time("created_at"),
+});

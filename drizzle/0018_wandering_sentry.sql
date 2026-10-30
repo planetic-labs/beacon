@@ -1,0 +1,2 @@
+DROP INDEX "storage_node_name_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "storage_node_name_idx" ON "storage_node" USING btree ("space_id",coalesce("parent_id", '00000000-0000-0000-0000-000000000000'::uuid),"name") WHERE "storage_node"."deleted_at" is null and "storage_node"."state"<>'missing';

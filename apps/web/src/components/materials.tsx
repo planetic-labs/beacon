@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { ArrowLeft, ChevronRight, Clapperboard, Grid2X2, Library, ListVideo, Menu, Play, Plus, Search, X } from "lucide-react";
 import "../materials.css";
+import { MediaPlayer } from "./media-player";
+import { Dialog } from "./ui";
 
-// Demonstration data for the visual prototype; no media services or playback.
+// Demonstration catalogue; the flower clip is locally hosted CC0 media.
 const playlists = [
   { id: "meetings", name: "Дикая природа", color: "#8299ba" },
   { id: "practice", name: "Мир океана", color: "#82a496" },
@@ -20,10 +22,12 @@ const videos = [
   { id: "pause", title: "Камчатка: земля вулканов", playlist: "short", cover: "Сила Земли", duration: "04:50", date: "На этой неделе", theme: "sage", progress: 0 },
 ];
 type Video = typeof videos[number];
-function VideoCard({ video, compact = false }: { video: Video; compact?: boolean }) {
+const demo: Video = { id: "flower", title: "Цветы крупным планом · тест плеера", playlist: "beacon", cover: "Мир в деталях", duration: "00:05", date: "Тестовое видео · CC0", theme: "sage", progress: 0 };
+videos.unshift(demo);
+function VideoCard({ video, compact = false, open }: { video: Video; compact?: boolean; open: () => void }) {
   const playlist = playlists.find(item => item.id === video.playlist)!;
   return <article className={`mv-video ${compact ? "compact" : ""}`}>
-    <button type="button" className={`mv-cover ${video.theme}`} disabled aria-label={`Смотреть «${video.title}» — появится позже`}>
+    <button type="button" className={`mv-cover ${video.theme}`} disabled={video.id !== demo.id} onClick={open} aria-label={`Смотреть «${video.title}»${video.id !== demo.id ? " — появится позже" : ""}`}>
       <span className="mv-cover-category">{playlist.name}</span>
       <span className="mv-cover-shape" aria-hidden="true" />
       <span className="mv-cover-title">{video.cover}</span>
@@ -35,12 +39,14 @@ function VideoCard({ video, compact = false }: { video: Video; compact?: boolean
   </article>;
 }
 export function Materials({ back }: { back: () => void }) {
+  const [watching, setWatching] = useState(false);
   const [view, setView] = useState("overview");
   const [menuOpen, setMenuOpen] = useState(false);
   const playlist = playlists.find(item => item.id === view);
   const visible = playlist ? videos.filter(video => video.playlist === playlist.id) : videos;
   function select(value: string) { setView(value); setMenuOpen(false); }
   return <>
+    {watching && <Dialog title={demo.title} className="material-player-dialog" close={() => setWatching(false)}><MediaPlayer src="/demo/flower.mp4" title={demo.title} pauseWhenHidden /><p className="material-player-note">Короткое тестовое видео MDN (CC0). При скрытии приложения воспроизведение останавливается.</p></Dialog>}
     {menuOpen && <button type="button" className="mv-backdrop" aria-label="Закрыть меню материалов" onClick={() => setMenuOpen(false)} />}
     <aside className={`mv-sidebar ${menuOpen ? "open" : ""}`} aria-label="Меню материалов" onKeyDown={event => { if(event.key === "Escape") setMenuOpen(false); }}>
       <header className="mv-brand"><span><Library size={21} /></span><h1>Материалы</h1><button type="button" className="mv-mobile-close mv-icon-button" aria-label="Закрыть меню" onClick={() => setMenuOpen(false)}><X size={20} /></button></header>
@@ -63,10 +69,10 @@ export function Materials({ back }: { back: () => void }) {
       </header>
       <div className="mv-content">
         <div className="mv-heading"><div>{playlist && <span className="mv-eyebrow">Плейлист</span>}<h2>{playlist?.name ?? (view === "all" ? "Все видео" : "Материалы")}</h2><p>{playlist ? `${visible.length} видео · Демонстрационный плейлист` : "Документальные истории о природе, животных и нашей планете"}</p></div><span className="mv-preview-label">Макет</span></div>
-        {view === "overview" && <section className="mv-continue" aria-label="Продолжить просмотр"><div className="mv-section-heading"><h2>Продолжить просмотр</h2></div><div className="mv-continue-grid">{videos.filter(video => video.progress > 0).map(video => <VideoCard key={video.id} video={video} compact />)}</div></section>}
+        {view === "overview" && <section className="mv-continue" aria-label="Продолжить просмотр"><div className="mv-section-heading"><h2>Продолжить просмотр</h2></div><div className="mv-continue-grid">{videos.filter(video => video.progress > 0).map(video => <VideoCard key={video.id} video={video} compact open={() => setWatching(true)} />)}</div></section>}
         <section aria-label={playlist?.name ?? "Видео"}>
           <div className="mv-section-heading"><h2>{playlist ? "Видео в плейлисте" : view === "all" ? "Медиатека" : "Свежие материалы"}</h2>{view === "overview" && <button type="button" onClick={() => select("all")}>Все видео<ChevronRight size={16} /></button>}</div>
-          <div className="mv-video-grid">{visible.map(video => <VideoCard key={video.id} video={video} />)}</div>
+          <div className="mv-video-grid">{visible.map(video => <VideoCard key={video.id} video={video} open={() => setWatching(true)} />)}</div>
         </section>
       </div>
     </main>

@@ -22,10 +22,25 @@ try{
   });
   await page.goto(base);await expect(page.getByRole("heading",{name:"Чаты",exact:true})).toBeVisible();
   const navigation=width>780?page.locator(".nav-rail"):page.getByRole("navigation",{name:"Навигация",exact:true});
+  if(role === "admin"){
   await navigation.getByRole("button",{name:"Материалы",exact:true}).click();
   await expect(page).toHaveURL(`${base}/materials`);
   await expect(page.getByRole("region",{name:"Продолжить просмотр",exact:true})).toBeVisible();
-  await expect(page.locator(".mv-video-grid .mv-video")).toHaveCount(8);
+  await expect(page.locator(".mv-video-grid .mv-video")).toHaveCount(9);
+  const headerTop=await page.locator(".mv-topbar").evaluate(element=>element.getBoundingClientRect().top);
+  const contentTop=await page.locator(".mv-content").evaluate(element=>element.getBoundingClientRect().top);
+  await page.locator(".mv-main").evaluate(element=>{element.scrollTop=200;});
+  await expect.poll(()=>page.locator(".mv-topbar").evaluate(element=>element.getBoundingClientRect().top)).toBe(headerTop);
+  await expect.poll(()=>page.locator(".mv-content").evaluate(element=>element.getBoundingClientRect().top)).toBeLessThan(contentTop);
+  await page.locator(".mv-main").evaluate(element=>{element.scrollTop=0;});
+  await page.getByRole("button",{name:"Смотреть «Цветы крупным планом · тест плеера»",exact:true}).click();
+  const playerDialog=page.getByRole("dialog",{name:"Цветы крупным планом · тест плеера",exact:true});
+  await expect(playerDialog.locator("video")).toBeVisible();
+  await playerDialog.locator("video").evaluate((video:HTMLVideoElement)=>video.play());
+  await expect.poll(()=>playerDialog.locator("video").evaluate((video:HTMLVideoElement)=>video.currentTime)).toBeGreaterThan(0);
+  await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-material-player-${role}-${width}.png`});
+  await page.keyboard.press("Escape");
+  await expect(playerDialog).toHaveCount(0);
   await expect(page.getByRole("button",{name:"Добавить материал",exact:true})).toBeDisabled();
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),"materials overview has no horizontal overflow");
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-materials-${role}-${width}.png`});
@@ -44,7 +59,7 @@ try{
   await expect(page.locator(".ss-main").getByRole("heading",{name:"Все файлы",exact:true})).toBeVisible();
   await expect(page.getByRole("button",{name:"Загрузить",exact:true})).toBeDisabled();
   await expect(page.getByRole("button",{name:"Новая папка",exact:true})).toBeDisabled();
-  await expect(page.getByRole("searchbox",{name:"Поиск файлов",exact:true})).toBeDisabled();
+  await expect(page.getByRole("searchbox",{name:"Поиск файлов",exact:true})).toBeEnabled();
   if(width>780){
    const columns=await page.locator(".storage-shell").evaluate(node=>getComputedStyle(node).gridTemplateColumns.split(" "));assert.equal(columns.length,3);
    await expect(page.locator(".nav-rail")).toBeVisible();
@@ -54,8 +69,19 @@ try{
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),"storage has no horizontal overflow");
   await page.reload();await expect(page.locator(".ss-main")).toBeVisible();
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-storage-${role}-${width}.png`});
-  if(width<=780)await page.getByRole("button",{name:"Назад к чатам",exact:true}).click();
+  if(width<=780)await page.getByRole("navigation",{name:"Навигация",exact:true}).getByRole("button",{name:"Чаты",exact:true}).click();
   else await page.locator(".nav-rail").getByRole("button",{name:"Чаты",exact:true}).click();
+  }else{
+   await expect(navigation.getByRole("button",{name:"Материалы",exact:true})).toHaveCount(0);
+   await expect(navigation.getByRole("button",{name:"Хранилище",exact:true})).toHaveCount(0);
+   for(const path of ["/storage","/materials"]){await page.goto(base+path);await expect(page).toHaveURL(base+"/");await expect(page.locator(".ss-main,.mv-main")).toHaveCount(0);}
+  }
+  if(role==="admin"){
+   await navigation.getByRole("button",{name:"Администрирование",exact:true}).click();
+   await page.getByRole("navigation",{name:"Разделы администрирования"}).getByRole("button",{name:"Хранилища",exact:true}).click();
+   await expect(page).toHaveURL(`${base}/admin/storage`);await expect(page.getByRole("heading",{name:"Настройки хранилищ",exact:true})).toBeVisible();await expect(page.locator(".storage-admin")).toContainText("Общие хранилища не настроены");
+   if(width<=780){await page.getByRole("button",{name:"Назад к разделам",exact:true}).click();await page.getByRole("button",{name:"Назад к чатам",exact:true}).click();}
+  }
   await navigation.getByRole("button",{name:"Настройки",exact:true}).click();await expect(page).toHaveURL(`${base}/settings`);
   const sections=page.getByRole("navigation",{name:"Разделы настроек",exact:true});await expect(sections).toBeVisible();
   if(width>780){

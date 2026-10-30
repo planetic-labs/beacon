@@ -94,6 +94,8 @@ try{
  await expect.poll(async()=>JSON.stringify((await localRows()).cache)).toContain("Исправлено на сервере");
  const cache=(await localRows()).cache.find((row:any)=>row.key.endsWith(`history/${id(3)}`));
  assert.equal(cache.value.messages[1].type,"deleted");
+ await expect(page.locator(`#message-${id(11)}`)).toHaveCount(0);
+ await expect(page.locator(".deleted-message")).toHaveCount(0);
  member=false;await page.evaluate(()=>dispatchEvent(new Event("online")));
  await expect.poll(async()=>(await stats()).chats).toBe(1);
  assert.ok(!(await localRows()).drafts.some((row:any)=>row.chatId===id(4)),"Revoked membership purges drafts too");

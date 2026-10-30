@@ -1,3 +1,4 @@
+import { messageAction } from "./message-menu";
 // End-to-end fixtures are created only in a disposable APP_ENV=test deployment.
 import { chromium, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
@@ -49,12 +50,12 @@ try{
  await b.getByRole("button",{name:"Поиск в чате",exact:true}).click();await b.getByRole("searchbox").fill("проверочноеупом");await b.getByRole("button",{name:/Проверочноеупоминание/}).click();await expect(b.locator(".highlight .message-mention.self")).toBeVisible();
  const original=a.locator(".message-group.outgoing",{hasText:"Проверочноеупоминание"});
  const originalId=await original.evaluate(node=>node.closest('[id^="message-"]')!.id);
- await original.getByRole("button",{name:"Удалить",exact:true}).click();
+ await messageAction(a, original, "Удалить");
  await a.getByRole("dialog").getByRole("button",{name:"Удалить",exact:true}).click();
- await expect(b.locator(`#${originalId} .deleted-message`)).toHaveText("Сообщение удалено",{timeout:10000});
+ await expect(b.locator(`#${originalId}`)).toHaveCount(0,{timeout:10000});await expect(a.locator(`#${originalId}`)).toHaveCount(0);
  await expect(b.locator(`#${originalId} .message-mention`)).toHaveCount(0);
  // Group participants can pin and unpin each other's messages.
- await outgoing.getByRole("button",{name:"Закрепить сообщение",exact:true}).click();
+ await messageAction(a, outgoing, "Закрепить сообщение");
  await expect(b.locator(".pinned-strip")).toContainText("Доставлено без открытия переписки",{timeout:10000});
  await b.getByRole("button",{name:"Все закреплённые сообщения"}).click();
  await b.getByRole("dialog").getByRole("button",{name:"Открепить",exact:true}).click();
@@ -82,7 +83,7 @@ try{
  await a.getByLabel("Выбрать фото",{exact:true}).setInputFiles([{name:"one.png",mimeType:"image/png",buffer:png},{name:"two.png",mimeType:"image/png",buffer:png}]);
  await a.getByLabel("Сообщение",{exact:true}).fill("Живойальбом");await a.getByRole("button",{name:"Отправить сообщение",exact:true}).click();
  const photoMessage=a.locator(".message-group.outgoing",{hasText:"Живойальбом"});await expect(photoMessage.locator(".message-photo")).toHaveCount(2);
- await photoMessage.getByRole("button",{name:"Кто прочитал",exact:true}).click();
+ await messageAction(a, photoMessage, "Кто прочитал");
  const readDialog=a.getByRole("dialog",{name:"Подробности прочтения",exact:true});await expect(readDialog).toBeVisible();
  await b.goto(`${base}/chats/${directId}`);await expect(b.locator(".bubble-text",{hasText:"Живойальбом"})).toBeVisible();
  await expect(readDialog).toContainText("Прочитали · 1",{timeout:10000});await expect(readDialog).not.toContainText("Время не зафиксировано");

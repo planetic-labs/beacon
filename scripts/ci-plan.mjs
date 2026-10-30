@@ -5,13 +5,14 @@ import { fileURLToPath } from "node:url";
 export const browserTests = [
   "browser-pwa.ts", "browser-chat-features.ts", "browser-message-layout.ts", "browser-chat-scroll.ts",
   "browser-offline.ts", "browser-attachments.ts", "browser-community-chats.ts", "browser-chat-media.ts",
-  "browser-emoji.ts", "browser-settings.ts", "browser-sticker-ownership.ts", "browser-stickers.ts",
+  "browser-emoji.ts", "browser-settings.ts", "browser-storage.ts", "browser-sticker-ownership.ts", "browser-stickers.ts",
   "browser-passkey-registration.ts", "browser-recordings.ts",
 ];
 const documentation = path => /(?:^|\/)\w[^/]*\.md$/i.test(path) || ["LICENSE", ".gitignore"].includes(path);
 const critical = path => path === ".dockerignore" || /^(?:\.github\/|drizzle\/|apps\/api\/src\/(?:server\.|db(?:\/|\.)|http\/controllers\/(?:auth|openid|oauth-metadata)\.|modules\/auth\/|http\/server\.|lib\/http\.)|apps\/web\/src\/auth-client\.|apps\/web\/src\/components\/(?:forms|passkey-confirmation)\.|apps\/web\/(?:vite\.config\.|build\/)|scripts\/(?:ci|migrate|bootstrap|realtime|unit-tests)|Dockerfile|docker-compose|tsconfig|pnpm-|package\.json)/.test(path)
   || /(?:^|\/)package\.json$/.test(path);
 const features = [
+  [/storage/i, ["browser-storage.ts"]],
   [/sticker/i, ["browser-stickers.ts", "browser-sticker-ownership.ts"]],
   [/(?:attachment|message-types|photo|chat-media|read-details)/i, ["browser-attachments.ts", "browser-chat-media.ts"]],
   [/(?:recording|circle|audio)/i, ["browser-recordings.ts"]],

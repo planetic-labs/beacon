@@ -1,0 +1,3 @@
+ALTER TABLE "storage_node" ADD CONSTRAINT "storage_node_parent_id_storage_node_id_fk" FOREIGN KEY ("parent_id") REFERENCES "public"."storage_node"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "storage_node" ADD CONSTRAINT "storage_node_source_id_storage_node_id_fk" FOREIGN KEY ("source_id") REFERENCES "public"."storage_node"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "storage_node" ADD CONSTRAINT "storage_node_parent_check" CHECK ("storage_node"."parent_id" is null or "storage_node"."parent_id"<>"storage_node"."id");

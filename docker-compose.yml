@@ -17,6 +17,8 @@ x-app: &app
     RESEND_API_KEY: ${RESEND_API_KEY:-}
     APP_ENV: ${APP_ENV:?Set environment name}
     MEDIA_ROOT: /data/media
+    STORAGE_ROOT: ${STORAGE_ROOT:-/data/media/storage}
+    STORAGES_JSON: ${STORAGES_JSON:-}
     VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
     VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
     VAPID_SUBJECT: ${VAPID_SUBJECT:-}

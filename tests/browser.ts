@@ -1,3 +1,4 @@
+import { messageAction } from "./message-menu";
 import { chromium, expect as baseExpect, type APIResponse } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { io } from "socket.io-client";
@@ -100,22 +101,16 @@ try {
   const message = a.locator(".message-group", {
     hasText: "Браузерная проверка доставки",
   });
-  await message.getByRole("button", { name: "Изменить", exact: true }).click();
+  await messageAction(a,message,"Изменить");
   await a.getByLabel("Сообщение", { exact: true }).fill("Изменённый текст");
   await a.getByRole("button", { name: "Сохранить изменения" }).click();
   await expect(
     a.locator(".bubble-text", { hasText: "Изменённый текст" }),
   ).toHaveCount(1);
-  await b
-    .locator(".message-group", { hasText: "Изменённый текст" })
-    .getByRole("button", { name: "Поставить реакцию" })
-    .click();
+  await messageAction(b,b.locator(".message-group", {hasText:"Изменённый текст"}),"Поставить реакцию");
   await b.getByRole("button", { name: "❤️", exact: true }).click();
   await expect(b.locator(".reaction-pill")).toContainText("❤️");
-  await b
-    .locator(".message-group", { hasText: "Изменённый текст" })
-    .getByRole("button", { name: "Ответить", exact: true })
-    .click();
+  await messageAction(b,b.locator(".message-group", {hasText:"Изменённый текст"}),"Ответить");
   await b
     .getByLabel("Сообщение", { exact: true })
     .fill("Ответ из второго браузера");

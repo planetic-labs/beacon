@@ -30,10 +30,11 @@ const admin = createRoute({ getParentRoute: () => app, path: "/admin" });
 const adminStickers = createRoute({ getParentRoute: () => app, path: "/admin/stickers" });
 const adminUsers = createRoute({ getParentRoute: () => app, path: "/admin/users" });
 const adminGroups = createRoute({ getParentRoute: () => app, path: "/admin/groups" });
+const adminStorage = createRoute({ getParentRoute: () => app, path: "/admin/storage" });
 const adminChats = createRoute({ getParentRoute: () => app, path: "/admin/chats" });
 const consent = createRoute({ getParentRoute: () => root, path: "/consent", component: Consent });
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([index, chat, materials, storage, people, profile, settings, settingsProfile, settingsSecurity, settingsNotifications, settingsStickers, settingsData, settingsAbout, admin, adminStickers, adminUsers, adminGroups, adminChats]), consent]),
+  routeTree: root.addChildren([app.addChildren([index, chat, materials, storage, people, profile, settings, settingsProfile, settingsSecurity, settingsNotifications, settingsStickers, settingsData, settingsAbout, admin, adminStickers, adminUsers, adminGroups, adminChats, adminStorage]), consent]),
   defaultPreload: "intent",
 });
 declare module "@tanstack/react-router" {
