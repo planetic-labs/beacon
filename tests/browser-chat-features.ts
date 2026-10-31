@@ -1,3 +1,4 @@
+import { chatAction } from "./message-menu";
 // Synthetic UI fixtures: never mutate users, sessions or messages in development.
 import { chromium, expect } from "@playwright/test";
 import { createServer } from "../apps/web/node_modules/vite/dist/node/index.js";
@@ -49,7 +50,7 @@ try{
   await page.getByRole("button",{name:"Отправить сообщение",exact:true}).click();
   await expect.poll(()=>sent?.mentions?.[0]?.userId).toBe(peer.id);assert.equal(sent.mentions[0].start,7);
   await expect(page.locator(".message-mention")).toHaveText(`@${peer.name}`);
-  await page.getByRole("button",{name:"Поиск в чате",exact:true}).click();
+  await chatAction(page,"Поиск в чате");
   await expect(page.getByRole("combobox",{name:"Переписка",exact:true})).toHaveValue(chatId);
   await expect(page.getByRole("combobox",{name:"Автор",exact:true})).toHaveValue("");
   const query=page.getByRole("searchbox",{name:"Поисковый запрос"});await query.fill("пров");

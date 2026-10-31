@@ -1,4 +1,4 @@
-import { messageAction } from "./message-menu";
+import { messageAction, openMessageMenu } from "./message-menu";
 // Layout and status checks use synthetic accounts and never touch dev messages.
 import {chromium,expect} from "@playwright/test";
 import {createServer} from "../apps/web/node_modules/vite/dist/node/index.js";
@@ -64,14 +64,14 @@ try{
    await expect(page.getByLabel("Сообщение",{exact:true})).toHaveValue("Сообщение 3");
    await page.getByRole("button",{name:"Отменить контекст сообщения"}).click();
   }
-  await foreign.locator(".message-group").hover();await foreign.getByRole("button",{name:"Действия с сообщением",exact:true}).click();
+  await openMessageMenu(page,foreign);
   await expect(menu).toBeVisible();await expect(menu.getByRole("menuitem",{name:"Удалить",exact:true})).toHaveCount(0);await expect(menu.getByRole("menuitem",{name:"Изменить",exact:true})).toHaveCount(0);
   await menu.getByRole("menuitem",{name:"Ответить",exact:true}).click();await expect(page.locator(".composer-context")).toContainText(peer.name);await page.getByRole("button",{name:"Отменить контекст сообщения"}).click();
   await sent.locator(".bubble-text").click({button:"right"});await expect(menu).toBeVisible();await expect(menu.getByRole("menuitem",{name:"Изменить",exact:true})).toBeVisible();await expect(menu.getByRole("menuitem",{name:"Удалить",exact:true})).toBeVisible();
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-message-menu-${width}.png`});
   const popup=await page.locator(".message-action-popup").boundingBox();assert.ok(popup&&popup.x>=0&&popup.x+popup.width<=width+1&&popup.y>=0&&popup.y+popup.height<=1001,"menu fits viewport");
-  await page.keyboard.press("End");await expect(menu.getByRole("menuitem",{name:"Удалить",exact:true})).toBeFocused();await page.keyboard.press("Escape");await expect(menu).toHaveCount(0);await expect(sent.getByRole("button",{name:"Действия с сообщением",exact:true})).toBeFocused();
-  await sent.getByRole("button",{name:"Действия с сообщением",exact:true}).click();await page.getByLabel("Сообщение",{exact:true}).click();await expect(menu).toHaveCount(0);
+  await page.keyboard.press("End");await expect(menu.getByRole("menuitem",{name:"Удалить",exact:true})).toBeFocused();await page.keyboard.press("Escape");await expect(menu).toHaveCount(0);if(width>780)await expect(sent.getByRole("button",{name:"Действия с сообщением",exact:true})).toBeFocused();
+  await openMessageMenu(page,sent);await page.getByLabel("Сообщение",{exact:true}).click();await expect(menu).toHaveCount(0);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-message-heading-${width}.png`});
   await messageAction(page, read, "Выбрать это сообщение");
