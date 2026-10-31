@@ -107,7 +107,8 @@ try{for(const width of [1440,390,320]){
  if(width<=780){
   const nav=page.getByRole('navigation',{name:'Навигация',exact:true});await expect(nav).toBeVisible();await expect(nav.getByRole('button',{name:'Хранилище',exact:true})).toHaveAttribute('aria-current','page');
   await expect(page.getByRole('button',{name:'Назад к чатам',exact:true})).toHaveCount(0);
-  const main=await page.locator('.ss-main').boundingBox(),menu=await nav.boundingBox();assert.ok(main&&menu&&main.y+main.height<=menu.y+1,'Files do not overlap navigation');
+  await page.locator('.ss-main').evaluate(node=>{node.scrollTop=node.scrollHeight;});
+  const files=await page.locator('.ss-files-card').boundingBox(),menu=await nav.boundingBox();assert.ok(files&&menu&&files.y+files.height<=menu.y+1,'File list can scroll clear of floating navigation');
  }
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'No page overflow');
  await page.screenshot({path:`/tmp/storage-files-${width}.png`});assert.deepEqual(errors,[]);if(width<=780){await page.getByRole('navigation',{name:'Навигация',exact:true}).getByRole('button',{name:'Чаты',exact:true}).click();await expect(page).toHaveURL(base+'/');}const shared={...space,name:'Общее',owner_id:null,personal_folder_label:'Пользователи'};
