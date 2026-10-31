@@ -19,7 +19,7 @@
 .mv-playlist-name small { display:block; margin-top:2px; font-size:11px; color:#929aab; font-weight:400; }
 .mv-demo-note { margin:auto 22px 20px; padding-top:40px; color:#9ba0ae; font-size:11px; line-height:1.6; }
 .mv-main { min-width:0; overflow-y:auto; background:var(--surface-soft); }
-.mv-topbar { display:flex; align-items:center; gap:16px; min-height:78px; padding:14px 32px; border-bottom:1px solid var(--line); }
+.mv-topbar { position:sticky; top:0; z-index:2; background:var(--surface-soft); display:flex; align-items:center; gap:16px; min-height:78px; padding:14px 32px; border-bottom:1px solid var(--line); }
 .mv-search { position:relative; flex:1; max-width:500px; min-width:0; }
 .mv-search input { width:100%; height:42px; padding:0 14px 0 42px; border:1px solid var(--line); border-radius:11px; background:white; font-size:13px; color:var(--ink); }
 .mv-search svg { position:absolute; left:14px; top:12px; color:#98a3b6; }

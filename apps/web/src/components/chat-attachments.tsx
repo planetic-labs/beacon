@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import type { Socket } from "socket.io-client";
 import { fileSize, type AttachmentCategory, type AttachmentPage } from "@beacon/shared";
 import { api, Dialog } from "./ui";
+import { MediaPlayer } from "./media-player";
 import { CirclePlayer } from "./message-types";
 import { Icon } from "./icon";
 import type { PhotoTarget } from "./photo-viewer";
@@ -21,7 +22,7 @@ export function ChatAttachments({chatId,name,socket,close,photo,jump}:{chatId:st
   {page.items.map(item=><article className="attachment-entry" key={item.messageId}><div className="attachment-entry-heading"><span>{item.authorName} · {new Date(item.createdAt).toLocaleDateString("ru")}</span><button className="text-button" onClick={()=>{close();jump(item.messageId);}}>К сообщению</button></div>
    {kind==="photo"?<div className="attachment-photo-grid">{item.files.map((file,index)=><button key={file.id} type="button" aria-label={`Открыть фото ${index+1}: ${item.authorName}`} onClick={()=>photo({chatId,messageId:item.messageId,index})}><img src={`/media/${file.id}?thumbnail=1`} alt={`Фото ${index+1}`} loading="lazy"/></button>)}</div>
     :kind==="links"?<div className="attachment-links">{item.links.map(url=><a key={url} href={url} target="_blank" rel="noopener noreferrer">{url}</a>)}</div>
-    :item.files.map(file=><div key={file.id} className="attachment-file-entry">{kind==="audio"&&<audio controls preload="none" src={`/media/${file.id}`} aria-label="Голосовое сообщение"/>}{kind==="video"&&(item.type==="circle"?<CirclePlayer src={`/media/${file.id}`} duration={item.duration}/>:file.mime.startsWith("video/")?<video controls playsInline preload="none" src={`/media/${file.id}`} aria-label={file.name??"Видео"}/>:null)}<a href={`/media/${file.id}?download=1`} download><Icon name="download"/><span>{file.name??(kind==="audio"?"Голосовое сообщение":item.type==="circle"?"Видеокружок":"Видео")} · {fileSize(file.size)}</span></a></div>)}
+    :item.files.map(file=><div key={file.id} className="attachment-file-entry">{kind==="audio"&&<MediaPlayer kind="audio" src={`/media/${file.id}`} title="Голосовое сообщение"/>}{kind==="video"&&(item.type==="circle"?<CirclePlayer src={`/media/${file.id}`} duration={item.duration}/>:file.mime.startsWith("video/")?<MediaPlayer src={`/media/${file.id}`} title={file.name??"Видео"}/>:null)}<a href={`/media/${file.id}?download=1`} download><Icon name="download"/><span>{file.name??(kind==="audio"?"Голосовое сообщение":item.type==="circle"?"Видеокружок":"Видео")} · {fileSize(file.size)}</span></a></div>)}
    {item.text&&<p className="attachment-caption">{item.text}</p>}
   </article>)}{busy&&<p role="status">Загружаем…</p>}{page.next&&<button className="text-button" disabled={busy} onClick={()=>void more()}>Показать ещё</button>}
  </div></Dialog>;

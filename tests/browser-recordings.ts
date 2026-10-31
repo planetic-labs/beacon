@@ -74,13 +74,14 @@ try {
       }
       await page.getByRole("button", { name: "Отправить запись", exact: true }).click();
       await expect(page.getByRole("button", { name: "Отправить запись", exact: true })).toHaveCount(0);
-      const player = page.locator(kind === "audio" ? ".message-audio" : ".message-circle");
-      await expect(player).toBeVisible();
-      await expect.poll(() => player.evaluate(node => (node as HTMLMediaElement).readyState)).toBeGreaterThanOrEqual(2);
+      const player = page.locator(kind === "audio" ? ".message-audio audio" : ".message-circle");
+      await expect(page.locator(kind === "audio" ? ".message-audio" : ".message-circle")).toBeVisible();
+      // Audio deliberately uses preload=none: playback must start before checking buffered data.
       if (kind === "audio") {
-        await player.evaluate(node => (node as HTMLMediaElement).play());
+        await page.locator(".message-audio").getByRole("button", { name: "Play", exact: true }).click();
+        await expect.poll(() => player.evaluate(node => (node as HTMLMediaElement).readyState)).toBeGreaterThanOrEqual(2);
         assert.equal(await player.evaluate(node => (node as HTMLMediaElement).paused), false);
-        await player.evaluate(node => (node as HTMLMediaElement).pause());
+        await page.locator(".message-audio").getByRole("button", { name: "Pause", exact: true }).click();
       }
       if (kind === "circle") {
         await page.getByRole("button", { name: "Воспроизвести видеокружок", exact: true }).click();

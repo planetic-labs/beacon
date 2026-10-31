@@ -1,3 +1,4 @@
+import { messageAction, chatAction } from "./message-menu";
 import { createRequire } from "node:module";
 // Synthetic users exercise media UX without touching the development deployment.
 import { chromium, expect } from "@playwright/test";
@@ -59,12 +60,12 @@ try{
   await expect(viewer.locator(".photo-view-status")).toHaveCount(0);
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-photo-viewer-${width}.png`});
   await page.keyboard.press("Escape");await expect(viewer).toHaveCount(0);
-  await page.getByRole("button",{name:"Вложения чата",exact:true}).click();const library=page.getByRole("dialog",{name:"Вложения · Тестовый чат",exact:true});await expect(library.getByRole("tab",{name:"Фото",exact:true})).toHaveAttribute("aria-selected","true");
+  await chatAction(page,"Вложения чата");const library=page.getByRole("dialog",{name:"Вложения · Тестовый чат",exact:true});await expect(library.getByRole("tab",{name:"Фото",exact:true})).toHaveAttribute("aria-selected","true");
   await library.getByRole("button",{name:`Открыть фото 1: ${me.name}`,exact:true}).click();await expect(viewer).toBeVisible();await page.keyboard.press("Escape");await expect(viewer).toHaveCount(0);await expect(library).toBeVisible();
   for(const tab of ["Видео","Файлы","Ссылки","Аудио"]){await library.getByRole("tab",{name:tab,exact:true}).click();await expect(library.getByRole("tabpanel",{name:tab,exact:true})).toBeVisible();if(tab==="Ссылки")await expect(library.getByRole("link",{name:"https://example.com/page"})).toHaveAttribute("rel","noopener noreferrer");}
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-attachment-library-${width}.png`});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),"library has no horizontal overflow");await library.getByRole("button",{name:"Закрыть",exact:true}).click();
-  await page.locator(`#message-${photo1}`).getByRole("button",{name:"Кто прочитал",exact:true}).click();const receipts=page.getByRole("dialog",{name:"Подробности прочтения",exact:true});await expect(receipts).toContainText(peer.name);await expect(receipts).toContainText("Прочитали · 1");await expect(receipts).toContainText("10:20");assert.equal(readRequests,1);
+  await messageAction(page, page.locator(`#message-${photo1}`), "Кто прочитал");const receipts=page.getByRole("dialog",{name:"Подробности прочтения",exact:true});await expect(receipts).toContainText(peer.name);await expect(receipts).toContainText("Прочитали · 1");await expect(receipts).toContainText("10:20");assert.equal(readRequests,1);
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-read-details-${width}.png`});await receipts.getByRole("button",{name:"Закрыть",exact:true}).click();
   assert.deepEqual(errors,[]);assert.ok(opened.includes(photo2));await context.close();console.log(`PASS photo viewer, attachment tabs and read details ${width}px`);
  }

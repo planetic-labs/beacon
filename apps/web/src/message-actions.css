@@ -1,0 +1,25 @@
+.message-hover-tools { position:absolute; right:0; top:-12px; z-index:3; display:flex; padding:3px; border:1px solid #e6e9f1; border-radius:22px; background:#fff; box-shadow:0 3px 12px #17243b12; opacity:0; pointer-events:none; }
+.message-hover-tools button { display:grid; place-items:center; width:32px; height:30px; padding:0; border:0; border-radius:18px; background:transparent; color:#8b95a5; cursor:pointer; }
+.message-hover-tools svg { width:20px; height:20px; stroke-width:1.8; }
+.message-group:hover > .message-hover-tools, .message-group:focus-within > .message-hover-tools, .message-hover-tools[data-open="true"] { opacity:1; pointer-events:auto; }
+.message-hover-tools button:hover, .message-hover-tools button:focus-visible { background:#eef1f7; color:#3457d5; }
+.message-action-popup { position:fixed; z-index:100; width:min(270px,calc(100vw - 16px)); max-height:calc(100dvh - 16px); overflow:auto; padding:6px; border:1px solid #e4e7ef; border-radius:16px; background:#fff; box-shadow:0 8px 32px #17243b26; }
+.message-action-popup [role="menu"] { display:grid; }
+.message-action-popup [role="menuitem"] { display:flex; align-items:center; gap:12px; min-height:40px; padding:8px 12px; border:0; border-radius:10px; color:var(--ink,#242c43); background:transparent; text-align:left; cursor:pointer; font-size:14px; }
+.message-action-popup [role="menuitem"] svg { width:19px; height:19px; flex-shrink:0; color:#8b95a5; stroke-width:1.8; }
+.message-action-popup [role="menuitem"]:hover, .message-action-popup [role="menuitem"]:focus-visible { background:#eef1f7; outline:none; }
+.message-action-popup [role="menuitem"].danger, .message-action-popup [role="menuitem"].danger svg { color:#d94050; }
+.message-quick-reactions { display:flex; justify-content:space-around; gap:2px; padding:3px 0 8px; margin-bottom:4px; border-bottom:1px solid #edf0f5; }
+.message-quick-reactions button { width:40px; height:38px; border:0; border-radius:50%; background:transparent; font-size:25px; cursor:pointer; }
+.message-quick-reactions button:hover, .message-quick-reactions button:focus-visible { background:#eef1f7; }
+@media (hover:none), (max-width:780px) {
+  .message-hover-tools { position:static; grid-column:2; justify-self:end; margin-top:2px; padding:0; border:0; box-shadow:none; background:transparent; opacity:1; pointer-events:auto; }
+  .message-hover-tools .message-shortcut { display:none; }
+  .message-hover-tools button { width:36px; height:30px; }
+}
+
+/* Keep continuation text aligned with the first message, with its own timestamp. */
+.message-group.continued-message[data-message-id] .group-body { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; align-items:start; }
+.continued-message .message-heading { grid-column:2; grid-row:1; margin:0; display:block; padding-top:8px; }
+.continued-message .bubble-row { grid-column:1; grid-row:1; min-width:0; }
+.continued-message .message-tools { grid-column:1 / -1; }

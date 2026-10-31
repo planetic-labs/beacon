@@ -1,0 +1,1 @@
+ALTER TABLE "storage_space" ADD COLUMN "personal_folder_label" text DEFAULT 'Пользователи' NOT NULL;

@@ -1,5 +1,7 @@
+import { MessageActions } from "./message-actions";
 import { Materials } from "./materials";
 import { Storage } from "./storage";
+import { StorageAdmin } from "./storage-admin";
 import { ComposerFrame, createComposerState } from "./composer-state";
 import { DeviceData } from "./device-data";
 import { useOfflineSync } from "./offline-sync";
@@ -41,6 +43,19 @@ import { api, ApiError, Avatar, Field, AvatarPicker, Dialog } from "./ui";
 import { Profile, Security, NewChat, UserForm, MembershipForm } from "./forms";
 import { PushSettings, ChatPushToggle, forgetPushDevice, pushWorker, syncPushDevice } from "./push-settings";
 export function Beacon(): ReactNode {
+  const appFrame=useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    const viewport=window.visualViewport;
+    if(!viewport)return;
+    let frame=0;
+    const update=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{
+      if(viewport.scale!==1)return;
+      appFrame.current?.style.setProperty("--visible-height",`${viewport.height}px`);
+      appFrame.current?.style.setProperty("--visible-top",`${viewport.offsetTop}px`);
+    });};
+    update();viewport.addEventListener("resize",update);viewport.addEventListener("scroll",update);
+    return ()=>{cancelAnimationFrame(frame);viewport.removeEventListener("resize",update);viewport.removeEventListener("scroll",update);};
+  },[]);
   const [photoView,setPhotoView]=useState<PhotoTarget|null>(null),[attachmentsOpen,setAttachmentsOpen]=useState(false),[readDetails,setReadDetails]=useState<Message|null>(null);
   const [selectionMode,setSelectionMode]=useState(false),[selectedMessages,setSelectedMessages]=useState<string[]>([]);
   const [forwardSources,setForwardSources]=useState<Message[]>([]),[pinsRevision,setPinsRevision]=useState(0);
@@ -75,12 +90,21 @@ export function Beacon(): ReactNode {
   const navigate = useNavigate();
   const pathname = useLocation({ select: location => location.pathname });
   const legacyChat = useSearch({ strict: false }).chat;
-  const section = (pathname === "/settings" || pathname.startsWith("/settings/")) ? "profile" : pathname === "/admin" || pathname.startsWith("/admin/") ? "admin" : pathname === "/storage" ? "storage" : pathname === "/materials" ? "materials" : "chats";
+  const [device, setDevice] = useState("desktop"),
+    [me, setMe] = useState<User | null>(null),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState("");
+  const requestedSection = (pathname === "/settings" || pathname.startsWith("/settings/")) ? "profile" : pathname === "/admin" || pathname.startsWith("/admin/") ? "admin" : pathname === "/storage" ? "storage" : pathname === "/materials" ? "materials" : "chats";
+  const section = me?.role !== "admin" && (requestedSection === "storage" || requestedSection === "materials") ? "chats" : requestedSection;
+  useEffect(() => {
+    if(me && me.role!=="admin" && (requestedSection==="storage"||requestedSection==="materials"))void navigate({to:"/",search:{},replace:true});
+  },[me?.role,requestedSection,navigate]);
   const adminSections = [
     { path: "/admin/users", title: "Пользователи", icon: "profile" },
     { path: "/admin/stickers", title: "Стикеры", icon: "sticker" },
     { path: "/admin/groups", title: "Группы пользователей", icon: "users" },
     { path: "/admin/chats", title: "Групповые чаты", icon: "chats" },
+    { path: "/admin/storage", title: "Хранилища", icon: "storage" },
   ] as const;
   const systemGroups = [
     {role:"admin",name:"Администраторы",description:"Управление пользователями, группами и остальными разделами администрирования."},
@@ -102,10 +126,6 @@ export function Beacon(): ReactNode {
   const sectionRoutes = { chats: "/", admin: "/admin", profile: "/settings", storage: "/storage", materials: "/materials" } as const;
   const setSection = (value: keyof typeof sectionRoutes) => { draftSync.current.flush(); void navigate({ to: sectionRoutes[value], search: {} }); };
   const closeChat = () => { draftSync.current.flush(); setSelected(null); selectedRef.current = null; void navigate({ to: "/", search: {} }); };
-  const [device, setDevice] = useState("desktop"),
-    [me, setMe] = useState<User | null>(null),
-    [loading, setLoading] = useState(true),
-    [error, setError] = useState("");
   const [email, setEmail] = useState(""),
     [code, setCode] = useState(""),
     [step, setStep] = useState<"email" | "code">("email"),
@@ -679,12 +699,12 @@ export function Beacon(): ReactNode {
     }
     setContext(null);
   }
-  async function reaction(emoji: string) {
-    if (!target) return;
+  async function reaction(emoji: string, message = target) {
+    if (!message) return;
     try {
-      await api(`messages/${target.id}/reaction`, "PATCH", {
+      await api(`messages/${message.id}/reaction`, "PATCH", {
         emoji,
-        remove: target.reactions.some(
+        remove: message.reactions.some(
           (r) => r.userId === me!.id && r.emoji === emoji,
         ),
       });
@@ -782,7 +802,7 @@ export function Beacon(): ReactNode {
   );
   if (!me)
     return (
-      <div className="app" data-device={device}>
+      <div ref={appFrame} className="app" data-device={device}>
         {toast}
         <main className="auth-shell">
           <section className="auth-card minimal">
@@ -955,7 +975,7 @@ export function Beacon(): ReactNode {
         ["materials", "Материалы"],
         ["navigator", "Навигатор"],
         ["storage", "Хранилище"],
-      ] as const).map(([icon, label]) => (
+      ] as const).filter(([icon]) => me.role === "admin" || (icon !== "storage" && icon !== "materials")).map(([icon, label]) => (
         <button
           key={icon}
           className={`rail-action ${(icon === "storage" && section === "storage") || (icon === "materials" && section === "materials") ? "active" : ""}`}
@@ -988,6 +1008,26 @@ export function Beacon(): ReactNode {
       </button>
     </aside>
   );
+  const mobileNavigation = (
+    <nav className="mobile-bottom" aria-label="Навигация" style={{gridTemplateColumns:`repeat(${me.role === "admin" ? 5 : 2}, minmax(0, 1fr))`}}>
+            <button className={section === "chats" ? "active" : undefined} aria-current={section === "chats" ? "page" : undefined} onClick={()=>{setSearchOpen(false);setSection("chats");}}>
+              <Icon name="chats" />
+              <span>Чаты</span>
+            </button>
+            {me.role === "admin" && <><button onClick={() => setSection("materials")}><Icon name="materials" /><span>Материалы</span></button>
+            <button className={section === "storage" ? "active" : undefined} aria-current={section === "storage" ? "page" : undefined} onClick={() => setSection("storage")}><Icon name="storage" /><span>Хранилище</span></button></>}
+            {me.role === "admin" ? (
+              <button onClick={() => setSection("admin")}>
+                <Icon name="settings" />
+                <span>Администрирование</span>
+              </button>
+            ) : null}
+            <button onClick={() => setSection("profile")}>
+              <Icon name="settings" />
+              <span>Настройки</span>
+            </button>
+          </nav>
+  );
   function chooseEmoji(emoji:string){
     const before=draftValue.current;
     const start=Math.min(emojiSelection.current.start,before.length),end=Math.min(emojiSelection.current.end,before.length);
@@ -1012,8 +1052,8 @@ export function Beacon(): ReactNode {
   return (
     <div className="app" data-device={device}>
       {toast}
-      {section === "materials" ? <div className="materials-shell">{nav}<Materials back={() => setSection("chats")} /></div> : section === "storage" ? <div className="storage-shell">{nav}<Storage back={() => setSection("chats")} /></div> : section === "chats" ? (
-        <div className={`chat-shell ${selected ? "has-chat" : ""}`}>
+      {section === "materials" ? <div className="materials-shell">{nav}<Materials back={() => setSection("chats")} /></div> : section === "storage" ? <div className="storage-shell">{nav}<Storage />{mobileNavigation}</div> : section === "chats" ? (
+        <div className={`chat-shell ${selected ? "has-chat" : ""}`} data-chat-kind={current?.kind}>
           {nav}
           {searchOpen ? <SearchPanel key={searchScope?.id??"global"} revision={searchRevision} scope={searchScope} users={users} chats={chats} openChat={openChat} openPerson={id=>void startDirectChat(id)} openMessage={hit=>void openSearchMessage(hit)} close={()=>setSearchOpen(false)}/> : <section className="chat-list">
             <header className="list-header">
@@ -1036,6 +1076,7 @@ export function Beacon(): ReactNode {
                 <h1>Чаты</h1>
                 <div className="inline-actions">
                   <button className="icon-button" aria-label="Открыть поиск" onClick={()=>beginSearch()}><Icon name="search"/></button>
+                  <button className="icon-button saved-chat-button" aria-label="Избранное" aria-pressed={!!saved&&selected===saved.id} data-tooltip="Избранное" onClick={()=>void openSaved()} disabled={busy}><Icon name="bookmark"/></button>
                   <button
                     className="icon-button"
                     onClick={() => setModal("new")}
@@ -1054,9 +1095,6 @@ export function Beacon(): ReactNode {
               </div>
             </header>
             <div className="chat-rows">
-              <button className={`chat-row ${selected===saved?.id?"active":""}`} onClick={()=>void openSaved()} disabled={busy} aria-label="Избранное">
-                <span className="avatar saved-avatar"><Icon name="bookmark"/></span><div className="chat-row-main"><div className="chat-row-title">Избранное</div><div className="chat-row-preview">{saved?.preview??"Заметки и сохранённые сообщения"}</div></div>
-              </button>
               {listedChats.map((c) => (
                 <button
                   className={`chat-row ${selected === c.id ? "active" : ""}`}
@@ -1139,6 +1177,7 @@ export function Beacon(): ReactNode {
                   >
                     <Icon name="back" />
                   </button>
+                  <div className="chat-peer-pill">
                   {current.kind==="saved"?<span className="avatar saved-avatar"><Icon name="bookmark"/></span>:<Avatar
                     name={current.name ?? "Чат"}
                     image={current.avatar}
@@ -1150,6 +1189,11 @@ export function Beacon(): ReactNode {
                       {current.kind==="saved"?"Личные заметки":activityText || (current.kind === "group" ? "Групповой чат" : presenceText(presence.people.get(current.peerId??""),presence.now))}
                     </div>
                   </div>
+                  </div>
+                  <details className="chat-header-menu" key={`${selected}/${device}`} open={device!=="mobile"?true:undefined}>
+                    <summary aria-label="Действия с чатом"><Icon name="menu"/></summary>
+                    <div className="chat-header-menu-items" onClick={event=>{if(device==="mobile"&&(event.target as HTMLElement).closest("button"))event.currentTarget.closest("details")?.removeAttribute("open");}}>
+                    {device==="mobile"&&<button className="icon-button" aria-label="Вложения чата" onClick={()=>setAttachmentsOpen(true)}><Icon name="file"/></button>}
                   <button className="icon-button" aria-label={current.pinned?"Открепить чат":"Закрепить чат"} title={current.pinned?"Открепить чат":"Закрепить чат"} aria-pressed={!!current.pinned} onClick={()=>void api(`chats/${selected}/pin`,"PATCH",{pinned:!current.pinned}).then(()=>refreshLists()).catch(notify)}><Icon name="pin"/></button>
                   <button className="icon-button" aria-label="Поиск в чате" onClick={()=>beginSearch({id:selected,name:current.name})}><Icon name="search"/></button>
                   <button className="icon-button" aria-label="Выбрать сообщения" aria-pressed={selectionMode} onClick={()=>{setSelectionMode(value=>!value);setSelectedMessages([]);}}><Icon name="select"/></button>
@@ -1163,6 +1207,8 @@ export function Beacon(): ReactNode {
                       <Icon name="menu" />
                     </button>
                   )}
+                    </div>
+                  </details>
                 </header>
                 <PinnedMessages key={selected} chatId={selected} socket={socket} connectionKey={`${me.firstName}/${me.lastName}`} changed={pinsRevision} onChanged={(id,pinned)=>setMessages(items=>items.map(m=>m.id===id?{...m,pinned}:m))} jump={id=>void loadAround(selected,id).catch(notify)} notify={notify}/>
                 {selectionMode&&<div className="selection-toolbar"><span>Выбрано: {selectedMessages.length} / 100</span><button className="text-button" disabled={!selectedMessages.length} onClick={()=>{setForwardSources(messages.filter(m=>selectedMessages.includes(m.id)&&m.type!=="deleted"));setTarget(null);setModal("forward");}}>Переслать</button><button className="text-button" onClick={()=>{setSelectionMode(false);setSelectedMessages([]);}}>Отмена</button></div>}
@@ -1187,13 +1233,16 @@ export function Beacon(): ReactNode {
                     )}
                     {!online&&!messages.length&&<p className="offline-history-note">Переписка ещё не загружена на это устройство. Подключитесь к интернету.</p>}
                     {offlineWindow?.hasMoreUnread&&<p className="offline-history-note">Часть непрочитанных сообщений не сохранена на устройстве. Доступны последние 1000; полная история — с интернетом.</p>}
-                    {messages.map((m, i) => (
+                    {messages.filter(message=>message.type!=="deleted").map((m, i, visibleMessages) => {
+                      const previous=visibleMessages[i-1];
+                      const continued=!!previous&&previous.authorId===m.authorId&&new Date(previous.createdAt).toDateString()===new Date(m.createdAt).toDateString()&&!(offlineWindow?.hasMoreUnread&&m.id===offlineWindow.unreadStartId);
+                      return (
                       <div key={m.id} id={`message-${m.id}`}>
                         <>
                           {offlineWindow?.hasMoreUnread&&m.id===offlineWindow.unreadStartId&&<div className="offline-history-note">Часть истории между этими сообщениями ещё не загружена.{networkAvailable&&<button className="text-button" type="button" onClick={()=>void loadAround(selected,m.id).catch(notify)}>Загрузить пропущенную историю</button>}</div>}
                           {(i === 0 ||
                             new Date(
-                              messages[i - 1].createdAt,
+                              visibleMessages[i - 1].createdAt,
                             ).toDateString() !==
                               new Date(m.createdAt).toDateString()) && (
                             <div className="date-divider">
@@ -1203,25 +1252,32 @@ export function Beacon(): ReactNode {
                             </div>
                           )}
                         </>
-                        <div
-                          data-message-id={m.id}
-                          className={`message-group ${m.authorId === me.id ? "outgoing" : ""} ${selectedMessages.includes(m.id)?"selected-message":""} ${selectionMode?"selectable-message":""}`}
+                        <MessageActions
+                          id={m.id} enabled={m.type!=="deleted"&&!selectionMode} pinned={!!m.pinned}
+                          className={`message-group ${continued?"continued-message":""} ${m.authorId === me.id ? "outgoing" : ""} ${selectedMessages.includes(m.id)?"selected-message":""} ${selectionMode?"selectable-message":""}`}
+                          reply={()=>chooseContext("reply",m)}
+                          edit={m.authorId===me.id&&["text","photo"].includes(m.type)?()=>chooseContext("edit",m):undefined}
+                          forward={()=>{setForwardSources([m]);setTarget(null);setModal("forward");}}
+                          read={m.authorId===me.id&&current.kind!=="saved"?()=>setReadDetails(m):undefined}
+                          pin={()=>void togglePin(m)} select={()=>{setSelectionMode(true);toggleSelected(m.id);}}
+                          remove={m.authorId===me.id?()=>setDeleting(m):undefined}
+                          reaction={()=>{setTarget(m);setModal("reaction");}} quickReaction={emoji=>void reaction(emoji,m)}
                         >
                           {selectionMode&&m.type!=="deleted"&&<input type="checkbox" className="message-selection" aria-label={`Выбрать сообщение ${m.authorName}: ${(m.content.text||m.content.name||"Вложение").slice(0,60)}`} checked={selectedMessages.includes(m.id)} disabled={!selectedMessages.includes(m.id)&&selectedMessages.length>=100} onChange={()=>toggleSelected(m.id)}/>}
                           <div className="message-avatar">
-                            <Avatar name={m.authorId===me.id?me.name:m.authorName}
-                              image={m.authorId===me.id?me.image:users.find(u=>u.id===m.authorId)?.image??m.authorImage} extra="green"/>
+                            {!continued&&<Avatar name={m.authorId===me.id?me.name:m.authorName}
+                              image={m.authorId===me.id?me.image:users.find(u=>u.id===m.authorId)?.image??m.authorImage} extra="green"/>}
                           </div>
                           <div className="group-body">
                             <div className="message-heading">
-                              <div className="author">{m.authorId===me.id?me.name:users.find(u=>u.id===m.authorId)?.name??m.authorName}</div>
+                              {!continued&&<div className="author">{m.authorId===me.id?me.name:users.find(u=>u.id===m.authorId)?.name??m.authorName}</div>}
                               <div className="message-meta">
                                 {current.kind!=="saved"&&m.type!=="deleted"&&m.authorId===me.id&&<DeliveryStatus receipts={receipts} message={m} open={()=>setReadDetails(m)}/>}
                                 <time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleTimeString("ru",{hour:"2-digit",minute:"2-digit"})}</time>
                               </div>
                             </div>
                             <div className="bubble-row">
-                              <div className={`bubble ${m.type === "sticker" ? "sticker-bubble" : ""}`}>
+                              <div className={`bubble ${["text","photo","sticker"].includes(m.type)?"flat-message":""} ${m.type === "sticker" ? "sticker-bubble" : ""}`}>
                                 {m.forwardedFrom && (
                                   <div className="forwarded">
                                     Переслано · {m.forwardedFrom.authorName}
@@ -1238,11 +1294,15 @@ export function Beacon(): ReactNode {
                                 <span className="bubble-text">
                                   {renderMessage(m.type, m.content, me.id, id=>{if(id!==me.id)void startDirectChat(id);}, index=>setPhotoView({chatId:m.chatId,messageId:m.id,index}))}
                                 </span>
+                                {current.kind==="direct"&&<span className="mobile-inline-meta">
+                                  <time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleTimeString("ru",{hour:"2-digit",minute:"2-digit"})}</time>
+                                  {m.authorId===me.id&&<DeliveryStatus receipts={receipts} message={m} open={()=>setReadDetails(m)}/>}
+                                </span>}
                                 {m.editedAt && <span className="message-edited" title={new Date(m.editedAt).toLocaleString("ru")}>Изменено</span>}
 
                               </div>
                             </div>
-                            {m.type!=="deleted"&&!selectionMode&&<div className="message-tools">
+                            {m.type!=="deleted"&&!selectionMode&&!!m.reactions.length&&<div className="message-tools">
                               {[
                                 ...new Set(m.reactions.map((r) => r.emoji)),
                               ].map((emoji) => (
@@ -1265,42 +1325,11 @@ export function Beacon(): ReactNode {
                                   }
                                 </button>
                               ))}
-                              <button
-                                onClick={() => {
-                                  setTarget(m);
-                                  setModal("reaction");
-                                }}
-                                aria-label="Поставить реакцию"
-                              >
-                                <Icon name="heart" />
-                              </button>
-                              <button onClick={() => chooseContext("reply", m)}>
-                                Ответить
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setForwardSources([m]);setTarget(null);
-                                  setModal("forward");
-                                }}
-                              >
-                                Переслать
-                              </button>
-                              {m.authorId===me.id&&current.kind!=="saved"&&<button type="button" onClick={()=>setReadDetails(m)}>Кто прочитал</button>}
-                              <button type="button" aria-label={m.pinned?"Открепить сообщение":"Закрепить сообщение"} onClick={()=>void togglePin(m)}>{m.pinned?"Открепить":"Закрепить"}</button>
-                              <button type="button" aria-label="Выбрать это сообщение" onClick={()=>{setSelectionMode(true);toggleSelected(m.id);}}>Выбрать</button>
-                              {m.authorId===me.id&&<button type="button" className="delete-message-button" onClick={()=>setDeleting(m)}>Удалить</button>}
-                              {m.authorId === me.id && ["text", "photo"].includes(m.type) && (
-                                <button
-                                  onClick={() => chooseContext("edit", m)}
-                                >
-                                  Изменить
-                                </button>
-                              )}
                             </div>}
                           </div>
-                        </div>
+                        </MessageActions>
                       </div>
-                    ))}
+                    );})}
                     {pending
                       .filter(
                         (p) =>
@@ -1318,7 +1347,7 @@ export function Beacon(): ReactNode {
                           <div className="group-body">
                             <div className="message-heading"><div className="author">{me.name}</div></div>
                             <div className="bubble-row">
-                              <div className="bubble">
+                              <div className="bubble flat-message">
                                 <span className="bubble-text">{p.text}</span>
                               </div>
                             </div>
@@ -1356,6 +1385,7 @@ export function Beacon(): ReactNode {
                 <ComposerFrame state={composerState} textarea={textarea} device={device} context={context}>
                   {(draft, mentionCursor) => (
                 <div
+                  ref={node=>{if(!node)return;const workspace=node.closest<HTMLElement>(".workspace");const observer=new ResizeObserver(()=>workspace?.style.setProperty("--composer-height",`${node.getBoundingClientRect().height}px`));observer.observe(node);return ()=>observer.disconnect();}}
                   className="composer-dock"
                   data-composer-state={context?.kind ?? "input"}
                 >
@@ -1490,24 +1520,7 @@ export function Beacon(): ReactNode {
               </div>
             )}
           </section>
-          <nav className="mobile-bottom" aria-label="Навигация" style={{gridTemplateColumns:`repeat(${me.role === "admin" ? 5 : 4}, minmax(0, 1fr))`}}>
-            <button className="active" onClick={()=>setSearchOpen(false)}>
-              <Icon name="chats" />
-              <span>Чаты</span>
-            </button>
-            <button onClick={() => setSection("materials")}><Icon name="materials" /><span>Материалы</span></button>
-            <button onClick={() => setSection("storage")}><Icon name="storage" /><span>Хранилище</span></button>
-            {me.role === "admin" ? (
-              <button onClick={() => setSection("admin")}>
-                <Icon name="settings" />
-                <span>Администрирование</span>
-              </button>
-            ) : null}
-            <button onClick={() => setSection("profile")}>
-              <Icon name="settings" />
-              <span>Настройки</span>
-            </button>
-          </nav>
+          {mobileNavigation}
         </div>
       ) : (
         <div className={`admin-shell ${section === "profile" || (section === "admin" && me.role === "admin") ? "administration-shell" : ""} ${!["/admin","/settings"].includes(pathname) ? "has-admin-page" : ""}`}>
@@ -1564,6 +1577,7 @@ export function Beacon(): ReactNode {
                   </button>
                 </>
               ) : me.role !== "admin" ? <p>Этот раздел доступен только администраторам.</p>
+              : adminPage.path === "/admin/storage" ? <StorageAdmin />
               : adminPage.path === "/admin/stickers" ? <StickerAdmin key="all" scope="all" notify={notify} />
               : adminPage.path === "/admin/groups" ? (
                 <div className="settings-card">

@@ -45,9 +45,11 @@ try{
  await other.keyboard.press("Escape");await a.keyboard.press("Escape");
  for(const width of [390,320]){
   await a.setViewportSize({width,height:900});
+  await a.getByLabel("Действия с чатом",{exact:true}).click();
   await expect(a.getByRole("button",{name:"Закрепить чат",exact:true})).toBeVisible();
   assert.ok(await a.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`no overflow ${width}`);
   await a.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-chat-preferences-${width}.png`});
+  await a.getByLabel("Действия с чатом",{exact:true}).click();
  }
  assert.deepEqual(errors,[]);console.log("PASS private draft sync, send clearing, reload, personal pins, group description and mobile layout");
 }finally{

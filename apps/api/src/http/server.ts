@@ -1,3 +1,4 @@
+import { storageRoutes } from "./controllers/storage";
 import { Readable } from "node:stream";
 import { attachmentRoutes } from "./controllers/attachment";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
@@ -72,6 +73,7 @@ export async function createApp(options: { dev?: boolean; serveWeb?: boolean } =
     app.route({ method, url: "/api/push/*", handler: run });
   }
   await app.register(attachmentRoutes);
+  await app.register(storageRoutes);
   app.post("/api/avatar", bridge(avatar));
   for (const method of ["GET", "POST", "PATCH"] as const) {
     app.route({ method, url: "/api/stickers", bodyLimit: 101 * 1024 * 1024, handler: bridge(stickers) });

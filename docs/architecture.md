@@ -198,3 +198,12 @@ window. IndexedDB/quota failures are reported; a failed durable queue write leav
 text in the composer. Clearing browser/site data can remove IndexedDB, including
 unsent text. Production/preview precache supports a full offline reload; development
 continues to use Vite and needs the server to reload its code.
+
+
+## File manager
+
+The file manager shares the low-level file interface with chat media, while its
+mounted-filesystem adapter preserves real file names and directory trees. PostgreSQL
+stores its catalog identities, permissions, favorites and trash metadata separately. Tus handles
+resumable streaming uploads; pg-boss runs durable jobs on the same PostgreSQL instance.
+See [storage.md](storage.md) for lifecycle, deployment and verification details.

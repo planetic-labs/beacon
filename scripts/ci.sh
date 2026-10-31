@@ -74,6 +74,7 @@ if [ "$mode" != full ]; then
   compose up -d --wait db
   compose run --rm --no-deps web pnpm db:migrate
   compose run --rm --no-deps web pnpm exec tsx --test tests/integration.test.ts tests/email-normalization.test.ts
+  compose run --rm --no-deps web pnpm exec tsx tests/storage-integration.ts
   exit 0
 fi
 docker build --cache-from beacon-tooling --build-arg "RELEASE_VERSION=${CI_RELEASE_VERSION:-}" --target production -t beacon-production-check .
@@ -90,6 +91,7 @@ docker run --rm beacon-browser pnpm exec tsx tests/browser-community-chats.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-media.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-emoji.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-settings.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-storage.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-stickers.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-sticker-ownership.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-passkey-registration.ts
@@ -102,6 +104,7 @@ compose run --rm --no-deps web pnpm db:migrate
 compose run --rm --no-deps web pnpm typecheck
 compose run --rm --no-deps web pnpm audit --audit-level low
 compose run --rm --no-deps web pnpm test
+compose run --rm --no-deps web pnpm exec tsx tests/storage-integration.ts
 compose run --rm --no-deps web pnpm exec tsx tests/browser-setup.ts
 compose up -d --wait --wait-timeout 90 web realtime
 compose run --rm --no-deps -e TEST_API_URL=http://web:3000 -e TEST_SOCKET_URL=http://realtime:3001 web pnpm exec tsx tests/realtime-chat-features.ts
