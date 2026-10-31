@@ -64,17 +64,18 @@ export class MountedStorage implements FileStorage {
     const directory=await this.path('.beacon-uploads',true);await mkdir(directory,{recursive:true});
     const temporary=await this.path(`.beacon-uploads/${key}.part`,true);
     await unlink(temporary).catch(error=>{if(!absent(error))throw error;});
-    const handle=await open(temporary,constants.O_CREAT|constants.O_EXCL|constants.O_WRONLY,0o600);
-    const hash=createHash('sha256');let size=0;
+    const handle=await open(temporary,constants.O_CREAT|constants.O_EXCL|constants.O_RDWR,0o600);
+    const hash=createHash('sha256');let size=0;let digest:string;
     try{
       for await(const value of stream){const bytes=Buffer.from(value);hash.update(bytes);size+=bytes.length;let offset=0;while(offset<bytes.length){const written=await handle.write(bytes,offset,bytes.length-offset);if(!written.bytesWritten)throw new Error('Short filesystem write');offset+=written.bytesWritten;}}
       await handle.sync();
+      digest=hash.digest('hex');
+      if(expectedSize!==undefined&&size!==expectedSize)throw new Error('Upload size mismatch');
+      // Verify the same open file that received the bytes, without reopening its path.
+      const verified=createHash('sha256');
+      for await(const chunk of handle.createReadStream({start:0,autoClose:false}))verified.update(chunk);
+      if(verified.digest('hex')!==digest)throw new Error('Upload checksum mismatch');
     }finally{await handle.close();}
-    const digest=hash.digest('hex');
-    if(expectedSize!==undefined&&size!==expectedSize)throw new Error('Upload size mismatch');
-    const staged=await open(temporary,constants.O_RDONLY|constants.O_NOFOLLOW);
-    const verified=createHash('sha256');for await(const chunk of staged.createReadStream())verified.update(chunk);
-    if(verified.digest('hex')!==digest)throw new Error('Upload checksum mismatch');
     const destination=await this.file(key);
     // Hard-link publication is atomic and refuses an existing destination, unlike rename.
     // Keep the staging file for retries if the mounted filesystem cannot publish safely.

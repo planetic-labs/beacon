@@ -42,6 +42,7 @@ test('mounted files publish only after verification, refuse collisions and symli
    assert.equal(await readFile(path.join(root,'.beacon-uploads',`${key}.part`),'utf8'),'abc');
    release();const result=await pending;assert.equal(result.sha256.length,64);
    assert.equal(await readFile(path.join(root,target),'utf8'),'abcdef');
+   assert.equal((await storage.publish(key,Readable.from(['abcdef']),6)).sha256,result.sha256);
    await assert.rejects(lstat(path.join(root,'.beacon-uploads',`${key}.part`)),{code:'ENOENT'});
    await assert.rejects(storage.publish(key,Readable.from(['different']),9));
    assert.equal(await readFile(path.join(root,target),'utf8'),'abcdef');
@@ -68,5 +69,19 @@ test('completed Tus upload publishes the staged inode without a second full-file
   await writeFile(path.join(directory,`${key}.json`),'{}');
   await storage.cleanupUpload(key);await storage.cleanupUpload(key);
   await assert.rejects(lstat(staged),{code:'ENOENT'});assert.equal(await readFile(path.join(root,'Finished.txt'),'utf8'),'direct bytes');
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('mounted publication detects staged byte corruption before publishing',async()=>{
+ const root=await mkdtemp(path.join(tmpdir(),'beacon-corrupted-')),key=v7();
+ const client={query:async()=>({rows:[{filesystem_path:'Ready.txt'}]})} as unknown as PoolClient;
+ const storage=new MountedStorage(root,client,v7());
+ async function* chunks(){
+  yield Buffer.from('original');
+  await writeFile(path.join(root,'.beacon-uploads',`${key}.part`),'modified');
+ }
+ try{
+  await assert.rejects(storage.publish(key,chunks() as unknown as Readable,8),/Upload checksum mismatch/);
+  await assert.rejects(lstat(path.join(root,'Ready.txt')),{code:'ENOENT'});
  }finally{await rm(root,{recursive:true,force:true});}
 });
