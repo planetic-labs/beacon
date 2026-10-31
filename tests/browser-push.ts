@@ -1,3 +1,4 @@
+import { chatAction } from "./message-menu";
 import {chromium,expect} from "@playwright/test";
 import {readFile} from "node:fs/promises";
 import {createECDH,randomBytes} from "node:crypto";
@@ -84,7 +85,8 @@ try {
   await page.goto(`${base}/?chat=${fixture.chatId}`,{waitUntil:"domcontentloaded"});
   await expect(page.locator(".chat-header-title")).toHaveText("Чат для технических моментов");
   await expect(page.locator(".bubble-text",{hasText:"Теперь текст виден"})).toBeVisible();
-  await page.getByRole("button",{name:"Отключить push в этом чате",exact:true}).click();
+  await chatAction(page,"Отключить push в этом чате");
+  await page.getByRole("button",{name:"Действия с чатом",exact:true}).click();
   await expect(page.getByRole("button",{name:"Включить push в этом чате",exact:true})).toBeEnabled();
   await page.getByRole("button",{name:"Включить push в этом чате",exact:true}).click();
   for(const width of [390,320]){
