@@ -8,3 +8,5 @@ allowBuilds:
 # Keep this override until the loader is replaced upstream.
 overrides:
   '@esbuild-kit/core-utils>esbuild': 0.28.2
+  # Fastify Static still pins glob 13; use the release fixing cancellation and minimatch DoS.
+  '@fastify/static>glob': 14.0.2

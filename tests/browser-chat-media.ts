@@ -1,4 +1,4 @@
-import { messageAction } from "./message-menu";
+import { messageAction, chatAction } from "./message-menu";
 import { createRequire } from "node:module";
 // Synthetic users exercise media UX without touching the development deployment.
 import { chromium, expect } from "@playwright/test";
@@ -60,7 +60,7 @@ try{
   await expect(viewer.locator(".photo-view-status")).toHaveCount(0);
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-photo-viewer-${width}.png`});
   await page.keyboard.press("Escape");await expect(viewer).toHaveCount(0);
-  await page.getByRole("button",{name:"Вложения чата",exact:true}).click();const library=page.getByRole("dialog",{name:"Вложения · Тестовый чат",exact:true});await expect(library.getByRole("tab",{name:"Фото",exact:true})).toHaveAttribute("aria-selected","true");
+  await chatAction(page,"Вложения чата");const library=page.getByRole("dialog",{name:"Вложения · Тестовый чат",exact:true});await expect(library.getByRole("tab",{name:"Фото",exact:true})).toHaveAttribute("aria-selected","true");
   await library.getByRole("button",{name:`Открыть фото 1: ${me.name}`,exact:true}).click();await expect(viewer).toBeVisible();await page.keyboard.press("Escape");await expect(viewer).toHaveCount(0);await expect(library).toBeVisible();
   for(const tab of ["Видео","Файлы","Ссылки","Аудио"]){await library.getByRole("tab",{name:tab,exact:true}).click();await expect(library.getByRole("tabpanel",{name:tab,exact:true})).toBeVisible();if(tab==="Ссылки")await expect(library.getByRole("link",{name:"https://example.com/page"})).toHaveAttribute("rel","noopener noreferrer");}
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-attachment-library-${width}.png`});

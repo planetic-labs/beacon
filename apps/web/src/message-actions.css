@@ -1,4 +1,4 @@
-.message-hover-tools { position:absolute; right:0; top:-12px; z-index:3; display:flex; padding:3px; border:1px solid #e6e9f1; border-radius:22px; background:#fff; box-shadow:0 3px 12px #17243b12; opacity:0; pointer-events:none; }
+.message-hover-tools { position:absolute; right:0; top:-32px; z-index:3; display:flex; padding:3px; border:1px solid #e6e9f1; border-radius:22px; background:#fff; box-shadow:0 3px 12px #17243b12; opacity:0; pointer-events:none; }
 .message-hover-tools button { display:grid; place-items:center; width:32px; height:30px; padding:0; border:0; border-radius:18px; background:transparent; color:#8b95a5; cursor:pointer; }
 .message-hover-tools svg { width:20px; height:20px; stroke-width:1.8; }
 .message-group:hover > .message-hover-tools, .message-group:focus-within > .message-hover-tools, .message-hover-tools[data-open="true"] { opacity:1; pointer-events:auto; }
