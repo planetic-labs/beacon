@@ -1,3 +1,5 @@
+import {chatListAction} from "./message-menu";
+import { chatAction } from "./message-menu";
 import { messageAction } from "./message-menu";
 // End-to-end fixtures are created only in a disposable APP_ENV=test deployment.
 import { chromium, expect } from "@playwright/test";
@@ -47,7 +49,7 @@ try{
  await a.getByLabel("Сообщение",{exact:true}).fill("Проверочноеупоминание @");await a.getByRole("option",{name,exact:true}).click();await a.getByRole("button",{name:"Отправить сообщение",exact:true}).click();
  await expect(b.getByLabel("Вас упомянули",{exact:true})).toBeVisible({timeout:10000});
  await b.getByRole("button",{name:/Чат для технических моментов/}).click();await expect(b.locator(".message-mention.self")).toHaveText(`@${name}`);
- await b.getByRole("button",{name:"Поиск в чате",exact:true}).click();await b.getByRole("searchbox").fill("проверочноеупом");await b.getByRole("button",{name:/Проверочноеупоминание/}).click();await expect(b.locator(".highlight .message-mention.self")).toBeVisible();
+ await chatAction(b,"Поиск в чате");await b.getByRole("searchbox").fill("проверочноеупом");await b.getByRole("button",{name:/Проверочноеупоминание/}).click();await expect(b.locator(".highlight .message-mention.self")).toBeVisible();
  const original=a.locator(".message-group.outgoing",{hasText:"Проверочноеупоминание"});
  const originalId=await original.evaluate(node=>node.closest('[id^="message-"]')!.id);
  await messageAction(a, original, "Удалить");
@@ -60,12 +62,12 @@ try{
  await b.getByRole("button",{name:"Все закреплённые сообщения"}).click();
  await b.getByRole("dialog").getByRole("button",{name:"Открепить",exact:true}).click();
  await expect(a.locator(".pinned-strip")).toHaveCount(0,{timeout:10000});
- await a.getByRole("button",{name:"Выбрать сообщения",exact:true}).click();
+ await chatAction(a,"Выбрать сообщения");
  await a.getByRole("checkbox").nth(0).check();await a.getByRole("checkbox").nth(1).check();
- await a.locator(".selection-toolbar").getByRole("button",{name:"Переслать",exact:true}).click();
+ await a.locator(".selection-actions").getByRole("button",{name:"Переслать",exact:true}).click();
  await a.getByRole("dialog").getByRole("button",{name:"Избранное",exact:true}).click();
  await expect(a.getByRole("dialog")).toHaveCount(0);
- await a.locator(".chat-list").getByRole("button",{name:"Избранное",exact:true}).click();
+ await chatListAction(a,"Избранное");
  await expect(a.locator(".forwarded")).toHaveCount(2,{timeout:10000});
  const savedId=new URL(a.url()).pathname.split("/").at(-1)!;
  const forbiddenSaved=await b.request.get(`${base}/api/v1/chats/${savedId}/messages`);assert.equal(forbiddenSaved.status(),403);

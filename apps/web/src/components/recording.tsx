@@ -1,3 +1,4 @@
+import { Button } from "./app-button";
 import { useEffect, useRef, useState } from "react";
 import { recordingLimits, type RecordingKind } from "@beacon/shared";
 import { v7 } from "uuid";
@@ -101,10 +102,10 @@ export function RecordingDialog({ kind, chatId, replyToId, close, notify, sent, 
       {phase === "permission" && <p>Разрешите доступ к {kind === "audio" ? "микрофону" : "камере и микрофону"}…</p>}
       {phase === "sending" && <p role="status">Обрабатываем и отправляем запись…</p>}
       <div className="recording-actions">
-        {phase === "idle" && <button className="primary-button" onClick={() => void start()}>Начать запись</button>}
-        {phase === "recording" && <button className="primary-button" onClick={stop}>Остановить запись</button>}
-        {phase === "preview" && <><button className="primary-button" onClick={() => void send()}>Отправить запись</button><button className="secondary-button" onClick={() => void start()}>Записать заново</button></>}
-        <button className="secondary-button" disabled={phase === "sending"} onClick={close}>Отмена</button>
+        {phase === "idle" && <Button className="primary-button" onClick={() => void start()}>Начать запись</Button>}
+        {phase === "recording" && <Button className="primary-button" onClick={stop}>Остановить запись</Button>}
+        {phase === "preview" && <><Button className="primary-button" onClick={() => void send()}>Отправить запись</Button><Button className="secondary-button" onClick={() => void start()}>Записать заново</Button></>}
+        <Button className="secondary-button" disabled={phase === "sending"} onClick={close}>Отмена</Button>
       </div>
     </div>
   </Dialog>;

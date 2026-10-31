@@ -1,4 +1,4 @@
-import { messageAction } from "./message-menu";
+import { messageAction, openMessageMenu } from "./message-menu";
 // Layout and status checks use synthetic accounts and never touch dev messages.
 import {chromium,expect} from "@playwright/test";
 import {createServer} from "../apps/web/node_modules/vite/dist/node/index.js";
@@ -64,14 +64,37 @@ try{
    await expect(page.getByLabel("Сообщение",{exact:true})).toHaveValue("Сообщение 3");
    await page.getByRole("button",{name:"Отменить контекст сообщения"}).click();
   }
-  await foreign.locator(".message-group").hover();await foreign.getByRole("button",{name:"Действия с сообщением",exact:true}).click();
+  if(width<=780){
+   const row=foreign.locator(".message-group"),bounds=await row.boundingBox();assert.ok(bounds);
+   const cdp=await context.newCDPSession(page);
+   await cdp.send("Emulation.setTouchEmulationEnabled",{enabled:true,maxTouchPoints:1});
+   await cdp.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x:bounds.x+60,y:bounds.y+bounds.height/2}]});
+   await expect(page.locator('.selection-toolbar')).toContainText('Выбрано: 1');
+   await cdp.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});
+   await expect(menu).toHaveCount(0);await expect(page.getByRole('checkbox').first()).toBeChecked();
+   await sent.locator('.bubble-text').click();await expect(page.locator('.selection-toolbar')).toContainText('Выбрано: 2');
+   await page.getByRole('button',{name:'Отменить выбор',exact:true}).click();
+   await foreign.locator('.bubble-text').click();await expect(menu).toBeVisible();
+   await page.keyboard.press('Escape');await expect(menu).toHaveCount(0);
+   await cdp.send("Emulation.setTouchEmulationEnabled",{enabled:false});await cdp.detach();
+  }
+  await openMessageMenu(page,foreign);
   await expect(menu).toBeVisible();await expect(menu.getByRole("menuitem",{name:"Удалить",exact:true})).toHaveCount(0);await expect(menu.getByRole("menuitem",{name:"Изменить",exact:true})).toHaveCount(0);
   await menu.getByRole("menuitem",{name:"Ответить",exact:true}).click();await expect(page.locator(".composer-context")).toContainText(peer.name);await page.getByRole("button",{name:"Отменить контекст сообщения"}).click();
   await sent.locator(".bubble-text").click({button:"right"});await expect(menu).toBeVisible();await expect(menu.getByRole("menuitem",{name:"Изменить",exact:true})).toBeVisible();await expect(menu.getByRole("menuitem",{name:"Удалить",exact:true})).toBeVisible();
+  await expect(menu.getByRole("menuitem")).toHaveText(["Ответить","Копировать","Переслать","Закрепить сообщение","Изменить","Удалить"]);
+  await expect(page.getByRole("button",{name:"Больше реакций",exact:true})).toBeVisible();
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-message-menu-${width}.png`});
   const popup=await page.locator(".message-action-popup").boundingBox();assert.ok(popup&&popup.x>=0&&popup.x+popup.width<=width+1&&popup.y>=0&&popup.y+popup.height<=1001,"menu fits viewport");
-  await page.keyboard.press("End");await expect(menu.getByRole("menuitem",{name:"Удалить",exact:true})).toBeFocused();await page.keyboard.press("Escape");await expect(menu).toHaveCount(0);await expect(sent.getByRole("button",{name:"Действия с сообщением",exact:true})).toBeFocused();
-  await sent.getByRole("button",{name:"Действия с сообщением",exact:true}).click();await page.getByLabel("Сообщение",{exact:true}).click();await expect(menu).toHaveCount(0);
+  if(width<=780){
+   await page.evaluate(()=>{Object.defineProperty(window.visualViewport!,"height",{configurable:true,value:360});window.visualViewport!.dispatchEvent(new Event("resize"));});
+   await expect.poll(()=>page.locator(".message-action-popup").evaluate(node=>{const rect=node.getBoundingClientRect();return rect.top>=8&&rect.bottom<=352;})).toBe(true);
+   await menu.getByRole("menuitem",{name:"Удалить",exact:true}).scrollIntoViewIfNeeded();
+   await expect(menu.getByRole("menuitem",{name:"Удалить",exact:true})).toBeInViewport();
+   await page.evaluate(()=>{Reflect.deleteProperty(window.visualViewport!,"height");window.visualViewport!.dispatchEvent(new Event("resize"));});
+  }
+  await page.keyboard.press("End");await expect(menu.getByRole("menuitem",{name:"Удалить",exact:true})).toBeFocused();await page.keyboard.press("Escape");await expect(menu).toHaveCount(0);await expect(sent.locator(".message-group")).toBeFocused();
+  await openMessageMenu(page,sent);if(width<=780)await page.locator(".message-menu-backdrop").click({position:{x:8,y:8}});else await page.getByLabel("Сообщение",{exact:true}).click();await expect(menu).toHaveCount(0);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-message-heading-${width}.png`});
   await messageAction(page, read, "Выбрать это сообщение");

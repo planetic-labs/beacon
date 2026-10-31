@@ -1,3 +1,4 @@
+import { Button } from "./app-button";
 import { useEffect, useRef, useState } from "react";
 
 export function AppUpdate() {
@@ -74,7 +75,7 @@ export function AppUpdate() {
   if (!available) return null;
   return <aside className="app-update" role="status">
     <span>{error || "Доступна новая версия Beacon"}</span>
-    <button disabled={applying} onClick={() => {
+    <Button disabled={applying} onClick={() => {
       const event = new Event("beacon:before-update", { cancelable: true });
       if (!window.dispatchEvent(event)) {
         setError("Сохраните или отправьте сообщение перед обновлением.");
@@ -86,6 +87,6 @@ export function AppUpdate() {
         reloadOnChange.current = true;
         registration.waiting.postMessage({ type: "beacon:activate-update" });
       } else location.reload();
-    }}>{applying ? "Обновляем…" : "Обновить"}</button>
+    }}>{applying ? "Обновляем…" : "Обновить"}</Button>
   </aside>;
 }

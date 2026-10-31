@@ -65,9 +65,9 @@ try{
   await expect.poll(bottom).toBeLessThan(3);
   if(width<780)await page.getByRole("button",{name:"Назад к списку",exact:true}).click();
   const navigation=width>780?page.locator(".nav-rail"):page.getByRole("navigation",{name:"Навигация",exact:true});
-  await navigation.getByRole("button",{name:"Настройки",exact:true}).click();
+  if(width<=780){await navigation.getByRole("button",{name:"Ещё",exact:true}).click();await page.locator(".more-links").getByRole("button",{name:"Настройки",exact:true}).click();}else await navigation.getByRole("button",{name:"Настройки",exact:true}).click();
   await page.getByRole("navigation",{name:"Разделы настроек",exact:true}).getByRole("button",{name:"Данные на устройстве",exact:true}).click();
-  if(width<780){await page.getByRole("button",{name:"Назад к разделам",exact:true}).click();await page.getByRole("button",{name:"Назад к чатам",exact:true}).click();}
+  if(width<780){await page.getByRole("button",{name:"Назад к разделам",exact:true}).click();await page.getByRole("button",{name:"Назад в Ещё",exact:true}).click();await navigation.getByRole("button",{name:"Чаты",exact:true}).click();}
   else await navigation.getByRole("button",{name:"Чаты",exact:true}).click();
   await page.locator(".chat-list").getByRole("button",{name:/Чат 3/}).click();
   await expect(page.locator(".feed .message-group")).toHaveCount(80);

@@ -1,3 +1,4 @@
+import { Button } from "./app-button";
 import { useState } from "react";
 
 export function About() {
@@ -17,11 +18,11 @@ export function About() {
       <div><dt>Режим</dt><dd>{mode}</dd></div>
     </dl>
     <div className="about-actions">
-      <button type="button" className="secondary-button" onClick={async () => {
+      <Button type="button" className="secondary-button" onClick={async () => {
         try { await navigator.clipboard.writeText(details); setStatus("Информация скопирована."); }
         catch { setStatus("Не удалось скопировать. Можно выделить данные выше вручную."); }
-      }}>Скопировать информацию</button>
-      <button type="button" className="secondary-button" disabled={checking} onClick={async () => {
+      }}>Скопировать информацию</Button>
+      <Button type="button" className="secondary-button" disabled={checking} onClick={async () => {
         if (!import.meta.env.PROD) { setStatus("В режиме разработки изменения загружаются автоматически."); return; }
         setChecking(true);
         try {
@@ -31,7 +32,7 @@ export function About() {
           setStatus(registration.waiting ? "Доступно обновление. Нажмите «Обновить» в уведомлении приложения." : registration.installing ? "Новая сборка загружается. После загрузки появится предложение обновить приложение." : "Проверка завершена. Новая сборка не обнаружена.");
         } catch { setStatus("Не удалось проверить обновления. Проверьте подключение к интернету."); }
         finally { setChecking(false); }
-      }}>{checking ? "Проверяем…" : "Проверить обновления"}</button>
+      }}>{checking ? "Проверяем…" : "Проверить обновления"}</Button>
     </div>
     <p role="status">{status}</p>
   </section>;

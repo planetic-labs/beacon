@@ -75,6 +75,8 @@ if [ "$mode" != full ]; then
   compose run --rm --no-deps web pnpm db:migrate
   compose run --rm --no-deps web pnpm exec tsx --test tests/integration.test.ts tests/email-normalization.test.ts
   compose run --rm --no-deps web pnpm exec tsx tests/storage-integration.ts
+  compose run --rm --no-deps web pnpm exec tsx tests/chat-selection-integration.ts
+  compose run --rm --no-deps web pnpm exec tsx tests/mentions-integration.ts
   exit 0
 fi
 docker build --cache-from beacon-tooling --build-arg "RELEASE_VERSION=${CI_RELEASE_VERSION:-}" --target production -t beacon-production-check .
@@ -84,6 +86,8 @@ docker run --rm beacon-browser pnpm exec tsx tests/browser-pwa.ts
 # Search, receipt and mention UI use synthetic users on desktop and mobile.
 docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-features.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-message-layout.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-swipes.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-list-selection.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-scroll.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-offline.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-attachments.ts
@@ -133,3 +137,7 @@ docker compose -p "$project" --env-file "$config" -f docker-compose.yml -f "$ove
 docker run --rm --network host --env-file "$config" \
   -v "$runtime:/run/test" beacon-browser \
   pnpm exec tsx tests/browser-dev.ts
+
+# Message ownership and mention routing are checked after fixture browser scenarios.
+compose run --rm --no-deps web pnpm exec tsx tests/chat-selection-integration.ts
+compose run --rm --no-deps web pnpm exec tsx tests/mentions-integration.ts

@@ -1,3 +1,5 @@
+import { Form } from "react-aria-components";
+import { Button } from "./app-button";
 import { useEffect, useState } from "react";
 import { authClient, registerPasskey } from "../auth-client";
 import { suggestPasskeyLabel } from "../lib/passkey-label";
@@ -28,8 +30,8 @@ export function PasskeyConfirmation({email, close, done}: {email:string;close:()
   return <Dialog title="Подтвердите, что это вы" close={()=>{if(!busy)close();}}>
     <p>Для добавления ключа нужно подтвердить вход кодом на почту текущего аккаунта.</p>
     <p>{email}</p>
-    {step==="request"&&<button type="button" className="primary-button" disabled={busy} onClick={()=>void sendCode()}>{busy?"Отправляем…":"Отправить код"}</button>}
-    {step==="code"&&<form onSubmit={async event=>{
+    {step==="request"&&<Button type="button" className="primary-button" disabled={busy} onClick={()=>void sendCode()}>{busy?"Отправляем…":"Отправить код"}</Button>}
+    {step==="code"&&<Form onSubmit={async event=>{
       event.preventDefault();if(busy||!/^\d{6}$/.test(code))return;
       setBusy(true);setError("");
       try{
@@ -42,22 +44,22 @@ export function PasskeyConfirmation({email, close, done}: {email:string;close:()
     }}>
       <label className="field">Код из письма<input aria-label="Код подтверждения" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} disabled={busy} onChange={event=>setCode(event.target.value.replace(/\D/g,""))}/></label>
       <div className="inline-actions">
-        <button className="primary-button" disabled={busy||code.length!==6}>{busy?"Проверяем…":"Подтвердить"}</button>
-        <button type="button" className="text-button" disabled={busy||cooldown>0} onClick={()=>void sendCode()}>{cooldown?`Отправить повторно через ${cooldown} с`:"Отправить код повторно"}</button>
+        <Button className="primary-button" disabled={busy||code.length!==6}>{busy?"Проверяем…":"Подтвердить"}</Button>
+        <Button type="button" className="text-button" disabled={busy||cooldown>0} onClick={()=>void sendCode()}>{cooldown?`Отправить повторно через ${cooldown} с`:"Отправить код повторно"}</Button>
       </div>
-    </form>}
+    </Form>}
     {step==="ready"&&<>
       <p>Вход подтверждён. Теперь можно создать ключ доступа.</p>
-      <button type="button" className="primary-button" disabled={busy} onClick={async()=>{
+      <Button type="button" className="primary-button" disabled={busy} onClick={async()=>{
         if(busy)return;setBusy(true);setError("");
         try{await registerPasskey(suggestPasskeyLabel(navigator));await done();}
         catch(error){
           if(error instanceof FreshSessionRequiredError){setStep("request");setError("Подтвердите вход ещё раз.");}
           else setError(error instanceof Error?error.message:"Не удалось добавить ключ.");
         }finally{setBusy(false);}
-      }}>{busy?"Создаём ключ…":"Продолжить создание ключа"}</button>
+      }}>{busy?"Создаём ключ…":"Продолжить создание ключа"}</Button>
     </>}
     {error&&<p role="alert">{error}</p>}
-    <button type="button" className="text-button" disabled={busy} onClick={close}>Отмена</button>
+    <Button type="button" className="text-button" disabled={busy} onClick={close}>Отмена</Button>
   </Dialog>;
 }

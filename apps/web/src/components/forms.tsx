@@ -1,3 +1,5 @@
+import { Form } from "react-aria-components";
+import { Button } from "./app-button";
 import { FreshSessionRequiredError } from "../lib/passkey-error";
 import { PasskeyConfirmation } from "./passkey-confirmation";
 import { suggestPasskeyLabel } from "../lib/passkey-label";
@@ -18,7 +20,7 @@ export function Profile({
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <form
+    <Form
       className="settings-card"
       onSubmit={async (e) => {
         e.preventDefault();
@@ -88,10 +90,10 @@ export function Profile({
           </Field>
         </>
       )}
-      <button className="primary-button" disabled={busy}>
+      <Button className="primary-button" disabled={busy}>
         {busy ? "Сохраняем…" : onboarding ? "Продолжить" : "Сохранить профиль"}
-      </button>
-    </form>
+      </Button>
+    </Form>
   );
 }
 export function Security({ email, notify }: { email: string | undefined; notify: (e: unknown) => void }) {
@@ -118,7 +120,7 @@ export function Security({ email, notify }: { email: string | undefined; notify:
       {keys.map((k) => (
         <div className="passkey-row" key={k.id}>
           {editing === k.id ? (
-            <form className="inline-actions" onSubmit={async event => {
+            <Form className="inline-actions" onSubmit={async event => {
               event.preventDefault();
               if (busy || !label.trim()) return;
               setBusy(true);
@@ -131,17 +133,17 @@ export function Security({ email, notify }: { email: string | undefined; notify:
               finally { setBusy(false); }
             }}>
               <input aria-label="Название ключа" value={label} maxLength={80} required disabled={busy} onChange={event => setLabel(event.target.value)} />
-              <button className="text-button" disabled={busy || !label.trim()}>Сохранить название</button>
-              <button type="button" className="text-button" disabled={busy} onClick={() => setEditing(null)}>Отмена</button>
-            </form>
+              <Button className="text-button" disabled={busy || !label.trim()}>Сохранить название</Button>
+              <Button type="button" className="text-button" disabled={busy} onClick={() => setEditing(null)}>Отмена</Button>
+            </Form>
           ) : (
             <div className="inline-actions">
               <strong>{k.name || "Ключ доступа"}</strong>
-              <button type="button" className="text-button" disabled={busy} onClick={() => { setEditing(k.id); setLabel(k.name ?? ""); }}>Переименовать</button>
+              <Button type="button" className="text-button" disabled={busy} onClick={() => { setEditing(k.id); setLabel(k.name ?? ""); }}>Переименовать</Button>
             </div>
           )}
           {k.createdAt && <span className="field-note">Создан {new Date(k.createdAt).toLocaleDateString("ru")}</span>}
-          <button
+          <Button
             type="button"
             disabled={busy}
             className="text-button"
@@ -158,11 +160,11 @@ export function Security({ email, notify }: { email: string | undefined; notify:
             }}
           >
             Удалить ключ
-          </button>
+          </Button>
         </div>
       ))}
       <p className="field-note">Название можно изменить, например на «Samsung» или «MacBook». При входе браузер показывает email аккаунта.</p>
-      <button
+      <Button
         type="button"
         className="secondary-button"
         disabled={busy}
@@ -179,12 +181,13 @@ export function Security({ email, notify }: { email: string | undefined; notify:
         }}
       >
         Добавить ключ доступа
-      </button>
+      </Button>
       {confirming && email && <PasskeyConfirmation email={email} close={() => setConfirming(false)} done={async () => { setConfirming(false); await refresh(); }} />}
     </section>
   );
 }
 export function NewChat({
+  initialKind="direct",
   users,
   done,
   notify,
@@ -192,12 +195,13 @@ export function NewChat({
   users: User[];
   done: (id: string) => Promise<void>;
   notify: (e: unknown) => void;
+  initialKind?: "direct"|"group";
 }) {
-  const [kind, setKind] = useState("direct"),
+  const [kind, setKind] = useState(initialKind),
     [ids, setIds] = useState<string[]>([]),
     [busy, setBusy] = useState(false);
   return (
-    <form
+    <Form
       className="dialog-body"
       onSubmit={async (e) => {
         e.preventDefault();
@@ -221,7 +225,7 @@ export function NewChat({
         <select
           value={kind}
           onChange={(e) => {
-            setKind(e.target.value);
+            setKind(e.target.value as "direct"|"group");
             setIds([]);
           }}
         >
@@ -256,10 +260,10 @@ export function NewChat({
           </label>
         ))}
       </div>
-      <button className="primary-button" disabled={busy || !ids.length}>
+      <Button className="primary-button" disabled={busy || !ids.length}>
         {busy ? "Создаём…" : "Открыть чат"}
-      </button>
-    </form>
+      </Button>
+    </Form>
   );
 }
 export function UserForm({
@@ -273,7 +277,7 @@ export function UserForm({
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <form
+    <Form
       className="admin-form"
       onSubmit={async (e) => {
         e.preventDefault();
@@ -331,10 +335,10 @@ export function UserForm({
           Заблокирован
         </label>
       )}
-      <button className="primary-button" disabled={busy}>
+      <Button className="primary-button" disabled={busy}>
         {busy ? "Сохраняем…" : "Сохранить"}
-      </button>
-    </form>
+      </Button>
+    </Form>
   );
 }
 export function MembershipForm({
@@ -351,7 +355,7 @@ export function MembershipForm({
   const [ids, setIds] = useState(group?.members ?? []),
     [busy, setBusy] = useState(false);
   return (
-    <form
+    <Form
       className="dialog-body"
       onSubmit={async (e) => {
         e.preventDefault();
@@ -408,9 +412,9 @@ export function MembershipForm({
           ))}
         </div>
       )}
-      <button className="primary-button" disabled={busy}>
+      <Button className="primary-button" disabled={busy}>
         {busy ? "Сохраняем…" : group ? "Сохранить" : "Создать группу"}
-      </button>
-    </form>
+      </Button>
+    </Form>
   );
 }

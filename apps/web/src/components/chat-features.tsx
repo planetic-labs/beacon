@@ -1,3 +1,4 @@
+import { Button } from "./app-button";
 import { rememberRead, acknowledgeRead, storageProblem } from "../offline";
 import { Icon } from "./icon";
 import { useCallback, useEffect, useRef, useState, type RefObject, type ReactNode } from "react";
@@ -94,14 +95,14 @@ export function DeliveryStatus({receipts,message,open}:{receipts:Receipt[];messa
   // In groups, blue means everyone has read; partial receipts stay grey.
   const state=label==="Прочитано"?"read":label.startsWith("Прочитано")||label.startsWith("Доставлено")?"delivered":"sent";
   if(state==="sent")return null;
-  return <button type="button" className={`delivery-status ${state}`} data-state={state} title={details||label} aria-label={label} onClick={open}><Icon name={state==="read"?"checks":"check"}/></button>;
+  return <Button type="button" className={`delivery-status ${state}`} data-state={state} title={details||label} aria-label={label} onClick={open}><Icon name={state==="read"?"checks":"check"}/></Button>;
 }
 export function MentionText({text,mentions=[],userId,open}:{text:string;mentions?:Mention[];userId?:string;open?:(id:string)=>void}) {
   const result:ReactNode[]=[];let offset=0;
   for(const m of [...mentions].sort((a,b)=>a.start-b.start)){
     if(m.start<offset||m.start+m.length>text.length)continue;
     result.push(text.slice(offset,m.start));
-    result.push(<button type="button" key={`${m.start}:${m.userId}`} className={`message-mention ${m.userId===userId?"self":""}`} onClick={()=>open?.(m.userId)}>{text.slice(m.start,m.start+m.length)}</button>);offset=m.start+m.length;
+    result.push(<Button type="button" key={`${m.start}:${m.userId}`} className={`message-mention ${m.userId===userId?"self":""}`} onClick={()=>open?.(m.userId)}>{text.slice(m.start,m.start+m.length)}</Button>);offset=m.start+m.length;
   }
   result.push(text.slice(offset));return <>{result}</>;
 }
@@ -124,5 +125,5 @@ export function MentionSuggestions({draft,cursor,members,choose}:{draft:string;c
     const input=document.getElementById("composer");input?.addEventListener("keydown",key,true);return()=>input?.removeEventListener("keydown",key,true);
   },[index]);
   if(!options.length||!match)return null;
-  return <div className="mention-suggestions" role="listbox" aria-label="Упомянуть участника">{options.map((u,i)=><button type="button" role="option" aria-selected={i===index} key={u.id} onMouseDown={e=>e.preventDefault()} onClick={()=>choose(u,cursor-match[1].length-1,cursor)}>{u.name}</button>)}</div>;
+  return <div className="mention-suggestions" role="listbox" aria-label="Упомянуть участника">{options.map((u,i)=><Button type="button" role="option" aria-selected={i===index} key={u.id} onMouseDown={e=>e.preventDefault()} onClick={()=>choose(u,cursor-match[1].length-1,cursor)}>{u.name}</Button>)}</div>;
 }

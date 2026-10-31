@@ -1,3 +1,4 @@
+import { Button } from "./app-button";
 import { useEffect, useState } from "react";
 import { ApiError } from "./ui";
 import { Icon } from "./icon";
@@ -123,9 +124,9 @@ export function PushSettings({notify}:{notify:(error:unknown)=>void}) {
       : <>
         <p className="field-note" role="status">{permission==="denied" ? "Уведомления запрещены. Разрешите их в настройках сайта в браузере." : active ? "На этом устройстве включены" : "На этом устройстве выключены"}</p>
         {brave && !active && <p className="field-note">В Brave для push нужен включённый параметр «Use Google services for push messaging» в настройках конфиденциальности: <code>brave://settings/privacy</code>.</p>}
-        <button className="secondary-button" disabled={busy || (permission==="denied" && !active)} onClick={() => void (active ? disable() : enable())}>
+        <Button className="secondary-button" disabled={busy || (permission==="denied" && !active)} onClick={() => void (active ? disable() : enable())}>
           {busy ? "Сохраняем…" : active ? "Отключить на этом устройстве" : "Включить уведомления"}
-        </button>
+        </Button>
         <label className="check-row"><input type="checkbox" checked={settings.enabled} disabled={busy} onChange={e=>void save({enabled:e.target.checked})}/>Получать push на всех подключённых устройствах</label>
         <label className="check-row"><input type="checkbox" checked={settings.showPreview} disabled={busy} onChange={e=>void save({showPreview:e.target.checked})}/>Показывать имя отправителя и текст сообщения</label>
       </>}
@@ -134,8 +135,8 @@ export function PushSettings({notify}:{notify:(error:unknown)=>void}) {
 export function ChatPushToggle({chatId,notify}:{chatId:string;notify:(error:unknown)=>void}) {
   const [muted,setMuted]=useState<boolean|null>(null),[busy,setBusy]=useState(false);
   useEffect(()=>{let live=true;setMuted(null);void pushApi<Settings>().then(s=>{if(live)setMuted(s.mutedChatIds.includes(chatId))}).catch(notify);return()=>{live=false}},[chatId]);
-  return <button className="icon-button" disabled={muted===null || busy} aria-label={muted ? "Включить push в этом чате" : "Отключить push в этом чате"} title={muted ? "Включить push в этом чате" : "Отключить push в этом чате"} aria-pressed={muted ?? false}
+  return <Button className="icon-button" disabled={muted===null || busy} aria-label={muted ? "Включить push в этом чате" : "Отключить push в этом чате"} title={muted ? "Включить push в этом чате" : "Отключить push в этом чате"} aria-pressed={muted ?? false}
     onClick={async()=>{setBusy(true);try{await pushApi(`/chats/${chatId}`,"PATCH",{muted:!muted});setMuted(!muted)}catch(e){notify(e)}finally{setBusy(false)}}}>
     <Icon name={muted ? "bellOff" : "bell"}/>
-  </button>;
+  </Button>;
 }

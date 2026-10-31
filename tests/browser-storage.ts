@@ -69,6 +69,13 @@ try{for(const width of [1440,390,320]){
  rejectMove=true;await dragFile.dragTo(dragFolder);await expect(page.getByRole('alert')).toContainText('Такое имя уже существует');await expect(dragFile).toBeVisible();assert.equal(moveRequests,3);rejectMove=false;await page.getByRole('button',{name:'Закрыть ошибку',exact:true}).click();
 
  await expect(page.getByRole('button',{name:'Документы',exact:true})).toBeVisible();
+ for(const label of ['Переименовать','В корзину']){
+  await page.getByRole('button',{name:'Действия: Документы',exact:true}).click();
+  await page.getByRole('menuitem',{name:label,exact:true}).click();
+  const actionDialog=page.getByRole('dialog',{name:label,exact:true});await expect(actionDialog).toBeVisible();
+  if(label==='Переименовать'){await expect(actionDialog.getByLabel('Новое название')).toHaveValue('Документы');await expect(actionDialog.getByLabel('Новое название')).toBeFocused();}
+  await actionDialog.getByRole('button',{name:'Отмена',exact:true}).click();await expect(actionDialog).toHaveCount(0);
+ }
  await page.getByRole('button',{name:'Новая папка',exact:true}).click();
  const create=page.getByRole('dialog',{name:'Новая папка',exact:true}),name=create.getByLabel('Название папки');
  await expect(create).toBeVisible();await expect(name).toBeFocused();await expect(create.getByRole('button',{name:'Создать',exact:true})).toBeDisabled();

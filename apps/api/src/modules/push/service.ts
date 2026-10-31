@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "../../db";
-import { rows, member, writable, type Actor } from "../chat/service";
+import { rows, member, writable, event, type Actor } from "../chat/service";
 import { HttpError } from "../../lib/http";
 import { pushConfiguration, subscriptionInput } from "./config";
 
@@ -40,6 +40,7 @@ export async function mute(u: Actor, chatId: string, muted: boolean) {
     await member(chatId, u, tx, true);
     await tx.execute(sql`insert into chat_notification_preference(user_id,chat_id,muted) values(${u.id},${chatId},${muted})
       on conflict(user_id,chat_id) do update set muted=excluded.muted`);
+    await event(tx,chatId,[u.id]);
   });
 }
 

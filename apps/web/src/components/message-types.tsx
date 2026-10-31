@@ -1,3 +1,4 @@
+import { Button } from "./app-button";
 import { MentionText } from "./chat-features";
 import { fileSize, type Mention } from "@beacon/shared";
 import { useRef, useState, type ReactNode } from "react";
@@ -15,7 +16,7 @@ const renderers: Record<string, Renderer> = {
   sticker: (content) => <img className="message-sticker" src={`/media/${content.fileId}`} alt={String(content.text || "Стикер")} loading="lazy" />,
   photo: (content, text, photo) => {
     const ids = Array.isArray(content.fileIds) ? content.fileIds as string[] : [String(content.fileId)];
-    return <><span className={`message-photos ${ids.length > 1 ? "multiple" : ""}`}>{ids.map((id, index) => <button type="button" className="message-photo-open" key={id} onClick={()=>photo?.(index)} aria-label={`Открыть фото ${index + 1}`}><img className="message-photo" src={`/media/${id}?thumbnail=1`} alt={`Фото ${index + 1}`} loading="lazy" /></button>)}</span>{content.text ? <span>{text}</span> : null}</>;
+    return <><span className={`message-photos ${ids.length > 1 ? "multiple" : ""}`}>{ids.map((id, index) => <Button type="button" className="message-photo-open" key={id} onClick={()=>photo?.(index)} aria-label={`Открыть фото ${index + 1}`}><img className="message-photo" src={`/media/${id}?thumbnail=1`} alt={`Фото ${index + 1}`} loading="lazy" /></Button>)}</span>{content.text ? <span>{text}</span> : null}</>;
   },
   text: (_content, text) => text,
 };
@@ -45,7 +46,7 @@ export function CirclePlayer({ src, duration = 0 }: { src: string; duration?: nu
     <video ref={video} className="message-circle" src={src} playsInline preload="metadata" aria-label="Видеокружок"
       onPlay={event => { exclusivePlay(event); setPlaying(true); }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
       onTimeUpdate={() => setTime(video.current?.currentTime ?? 0)} onLoadedMetadata={() => { const value = video.current?.duration; if (value && Number.isFinite(value)) setLength(value); }} onError={() => setFailed(true)} />
-    <button type="button" className="circle-play" aria-label={playing ? "Приостановить видеокружок" : "Воспроизвести видеокружок"} onClick={() => void toggle()}><Icon name={playing ? "pause" : "play"} /></button>
+    <Button type="button" className="circle-play" aria-label={playing ? "Приостановить видеокружок" : "Воспроизвести видеокружок"} onClick={() => void toggle()}><Icon name={playing ? "pause" : "play"} /></Button>
     <input className="circle-seek" type="range" aria-label="Перемотка видеокружка" min={0} max={length || 1} step={0.1} value={Math.min(time, length || 1)} onChange={event => { if (video.current) video.current.currentTime = Number(event.target.value); }} />
     {failed && <span className="circle-error">Не удалось воспроизвести</span>}
   </span>;
@@ -54,5 +55,5 @@ export function CirclePlayer({ src, duration = 0 }: { src: string; duration?: nu
 function FileMessage({content,caption,photo}:{content:Record<string,unknown>;caption:ReactNode;photo?:(index:number)=>void}) {
   const [failed,setFailed]=useState(false);
   const image=["image/jpeg","image/png","image/webp"].includes(String(content.mime));
-  return <span className="message-file">{image&&!failed&&<button type="button" className="message-photo-open" aria-label="Открыть фото" onClick={()=>photo?.(0)}><img className="message-photo" src={`/media/${content.fileId}?thumbnail=1`} alt={String(content.name??"Фото")} loading="lazy" onError={()=>setFailed(true)}/></button>}<a href={`/media/${content.fileId}?download=1`} download><Icon name="file"/><span><strong>{String(content.name??"Файл")}</strong><small>{fileSize(Number(content.size??0))} · Скачать</small></span></a>{content.text?<span>{caption}</span>:null}</span>;
+  return <span className="message-file">{image&&!failed&&<Button type="button" className="message-photo-open" aria-label="Открыть фото" onClick={()=>photo?.(0)}><img className="message-photo" src={`/media/${content.fileId}?thumbnail=1`} alt={String(content.name??"Фото")} loading="lazy" onError={()=>setFailed(true)}/></Button>}<a href={`/media/${content.fileId}?download=1`} download><Icon name="file"/><span><strong>{String(content.name??"Файл")}</strong><small>{fileSize(Number(content.size??0))} · Скачать</small></span></a>{content.text?<span>{caption}</span>:null}</span>;
 }

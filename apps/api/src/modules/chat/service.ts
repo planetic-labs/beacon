@@ -91,7 +91,7 @@ export async function createChat(
 }
 export async function chatList(u: Actor) {
   return rows(sql`
- select c.id,c.kind,c.title,c.description,m.pinned,c.owner_id as "ownerId",c.image,
+ select c.id,c.kind,c.title,c.description,c.history_revision as "historyRevision",coalesce((select muted from chat_notification_preference np where np.chat_id=c.id and np.user_id=${u.id}),false) as muted,m.pinned,c.owner_id as "ownerId",c.image,
  case when c.kind='direct' then (select m2.user_id from chat_member m2 where m2.chat_id=c.id and m2.user_id<>${u.id} limit 1) end as "peerId",
  case when c.kind='direct' then (select name from "user" u2 join chat_member m2 on m2.user_id=u2.id where m2.chat_id=c.id and u2.id<>${u.id} limit 1) else c.title end as name,
  case when c.kind='direct' then (select image from "user" u2 join chat_member m2 on m2.user_id=u2.id where m2.chat_id=c.id and u2.id<>${u.id} limit 1) else c.image end as avatar,
@@ -112,7 +112,7 @@ export async function history(
   throughId?: string,
   window?: { readAt: string; read: boolean; limit: number },
 ) {
-  await member(chatId, u);
+  const chatState=await member(chatId, u);
   const limit=window?.limit??50;
   let bound = sql``;
   if (cursor)
@@ -127,6 +127,7 @@ export async function history(
    coalesce((select json_agg(json_build_object('userId',r.user_id,'name',ur.name,'emoji',r.emoji)) from reaction r join "user" ur on ur.id=r.user_id where r.message_id=m.id),'[]'::json) as reactions
    from message m join "user" u on u.id=m.author_id where m.chat_id=${chatId} ${window ? (window.read ? sql`and m.created_at<=${window.readAt}::timestamptz` : sql`and m.created_at>${window.readAt}::timestamptz`) : sql``} and exists(select 1 from chat_member cm where cm.chat_id=m.chat_id and cm.user_id=${u.id}) ${bound} ${throughId ? sql`and (m.created_at,m.id)<=(select created_at,id from message where id=${throughId} and chat_id=${chatId})` : sql``} order by m.created_at ${after ? sql`asc` : sql`desc`},m.id ${after ? sql`asc` : sql`desc`} limit ${limit+1}`);
   return {
+    historyRevision: Number(chatState.history_revision??0),
     messages: after ? result.slice(0, limit) : result.slice(0, limit).reverse(),
     hasMore: result.length > limit,
   };
@@ -134,14 +135,14 @@ export async function history(
 // One bounded, authoritative device snapshot. The read boundary is captured once
 // so concurrent read receipts cannot introduce a gap between the two windows.
 export async function offlineHistory(chatId:string,u:Actor) {
-  await member(chatId,u);
+  const chatState=await member(chatId,u);
   const [state]=await rows<{readAt:string}>(sql`select to_char(last_read_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "readAt" from chat_member where chat_id=${chatId} and user_id=${u.id}`);
   if(!state)throw new HttpError(403,"Нет доступа к чату");
   const [read,unread]=await Promise.all([
     history(chatId,u,undefined,false,false,undefined,{readAt:state.readAt,read:true,limit:100}),
     history(chatId,u,undefined,false,false,undefined,{readAt:state.readAt,read:false,limit:1000}),
   ]);
-  return {messages:[...read.messages,...unread.messages],hasMoreRead:read.hasMore,hasMoreUnread:unread.hasMore,unreadStartId:unread.messages[0]?.id};
+  return {historyRevision:Number(chatState.history_revision??0),messages:[...read.messages,...unread.messages],hasMoreRead:read.hasMore,hasMoreUnread:unread.hasMore,unreadStartId:unread.messages[0]?.id};
 }
 export async function send(
   u: Actor,

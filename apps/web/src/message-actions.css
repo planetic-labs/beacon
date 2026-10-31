@@ -23,3 +23,14 @@
 .continued-message .message-heading { grid-column:2; grid-row:1; margin:0; display:block; padding-top:8px; }
 .continued-message .bubble-row { grid-column:1; grid-row:1; min-width:0; }
 .continued-message .message-tools { grid-column:1 / -1; }
+.message-menu-backdrop { position:fixed; inset:0; z-index:99; background:#17243b38; }
+@media(max-width:780px) {
+ .message-action-popup { width:min(310px,calc(100vw - 24px)); padding:0; background:transparent; border:0; box-shadow:none; border-radius:20px; }
+ .message-quick-reactions { background:#fff; border:0; border-radius:26px; padding:7px; margin-bottom:8px; box-shadow:0 3px 16px #17243b18; }
+ .message-action-popup [role="menu"] { background:#fff; padding:6px; border-radius:18px; box-shadow:0 6px 24px #17243b26; }
+ .message-action-popup [role="menuitem"] { min-height:44px; font-size:15px; }
+}
+
+/* Only the active row moves; no React/history updates during a touch gesture. */
+.message-group[data-swipe-active] > .group-body { transform:translateX(var(--swipe-x,0px)); will-change:transform; }
+.message-group[data-swipe-active]::after { content:""; position:absolute; right:8px; top:calc(50% - 12px); width:24px; height:24px; pointer-events:none; background:center/22px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233158d5' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 10-5 5 5 5M4 15h11a5 5 0 0 0 0-10h-1'/%3E%3C/svg%3E"); }

@@ -193,3 +193,8 @@
 .ss-file-name[draggable=true]{cursor:grab;}
 .ss-file-name[draggable=true]:active{cursor:grabbing;}
 .ss-upload-dragging .ss-tooltip{display:none;}
+.ss-modal-backdrop .ss-action-modal { position:relative; inset:auto; margin:0; }
+.ss-aria-actions { z-index:100; width:190px; background:white; border:1px solid var(--line); border-radius:10px; box-shadow:0 8px 30px #19283d22; padding:5px; }
+.ss-aria-actions [role="menu"] { outline:none; }
+.ss-aria-actions [role="menuitem"] { padding:9px; border-radius:6px; outline:none; cursor:pointer; }
+.ss-aria-actions [role="menuitem"][data-focused] { background:#eef0fb; }

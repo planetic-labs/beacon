@@ -1,3 +1,4 @@
+import { Button } from "./app-button";
 import { useEffect, useState } from "react";
 import { fileSize } from "@beacon/shared";
 import { clearHistory, deviceStats, storageUnavailable, writeCache } from "../offline";
@@ -14,9 +15,9 @@ export function DeviceData({notify}:{notify:(error:unknown)=>void}) {
     <p>Фоновая загрузка работает, пока приложение открыто. Сначала обновляется открытый чат, затем остальные — начиная с недавних.</p>
     {storageUnavailable()?<p role="alert">Браузер не разрешает сохранять данные. Офлайн-доступ недоступен.</p>:stats&&<>
       <dl className="device-data-stats"><dt>Локальные данные</dt><dd>≈ {fileSize(stats.bytes)}</dd><dt>Сохранённые чаты</dt><dd>{stats.chats}</dd><dt>Сообщения</dt><dd>{stats.messages}</dd><dt>Черновики</dt><dd>{stats.drafts}</dd><dt>В очереди отправки</dt><dd>{stats.queued}</dd></dl>
-      <button className="secondary-button" disabled={busy||!stats.messages} onClick={async()=>{setBusy(true);try{await clearHistory();}catch(error){notify(error);}finally{setBusy(false);}}}>Очистить загруженную переписку</button>
+      <Button className="secondary-button" disabled={busy||!stats.messages} onClick={async()=>{setBusy(true);try{await clearHistory();}catch(error){notify(error);}finally{setBusy(false);}}}>Очистить загруженную переписку</Button>
       <p>Черновики и неотправленные сообщения сохранятся. После очистки фоновая загрузка приостановится; открываемые чаты продолжат сохраняться.</p>
-      {stats.paused&&<button className="secondary-button" onClick={()=>void writeCache("background-paused",false).then(()=>window.dispatchEvent(new Event("beacon:resume-download")))}>Возобновить фоновую загрузку</button>}
+      {stats.paused&&<Button className="secondary-button" onClick={()=>void writeCache("background-paused",false).then(()=>window.dispatchEvent(new Event("beacon:resume-download")))}>Возобновить фоновую загрузку</Button>}
     </>}
     <p>Данные хранятся в этом браузере. При выходе из аккаунта они удаляются. Очистка данных браузера также удалит черновики и очередь.</p>
   </section>;

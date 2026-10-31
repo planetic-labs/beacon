@@ -140,6 +140,7 @@ export const chats = pgTable(
     kind: text("kind").notNull(),
     title: text("title"),
     description: text("description").notNull().default(""),
+    historyRevision: integer("history_revision").notNull().default(0),
     image: text("image"),
     ownerId: uuid("owner_id")
       .notNull()
@@ -505,3 +506,12 @@ export const storageAudit = pgTable("storage_audit", {
   action: text("action").notNull(), nodeId: uuid("node_id"),
   spaceId: uuid("space_id").notNull(), createdAt: time("created_at"),
 });
+
+// Personal chat folders never change conversation membership or other users' lists.
+export const chatFolder = pgTable("chat_folder", {
+  id:id(), userId:uuid("user_id").notNull().references(()=>user.id), name:text("name").notNull(), createdAt:time("created_at"),
+}, t=>[index("chat_folder_user_idx").on(t.userId)]);
+export const chatFolderItem = pgTable("chat_folder_item", {
+  folderId:uuid("folder_id").notNull().references(()=>chatFolder.id,{onDelete:"cascade"}),
+  chatId:uuid("chat_id").notNull().references(()=>chats.id,{onDelete:"cascade"}),
+},t=>[primaryKey({columns:[t.folderId,t.chatId]})]);

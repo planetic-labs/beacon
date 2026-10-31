@@ -1,0 +1,1 @@
+ALTER TABLE "chat" ADD COLUMN "history_revision" integer DEFAULT 0 NOT NULL;
