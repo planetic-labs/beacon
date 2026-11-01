@@ -1,3 +1,4 @@
+import { Button } from "./app-button";
 import { useEffect, useRef, useState } from "react";
 import { attachmentLimits, fileSize, type AttachmentKind } from "@beacon/shared";
 import { v7 } from "uuid";
@@ -24,5 +25,5 @@ export function AttachmentUpload({file,kind,chatId,replyToId,close,notify,sent}:
     }catch(error){if(live.current&&!(error instanceof DOMException&&error.name==="AbortError"))notify(error);}
     finally{request.current=null;if(live.current)setUploading(false);}
   }
-  return <Dialog title={kind==="video"?"Отправить видео":"Отправить файл"} close={cancel}><div className="attachment-upload"><strong>{file.name}</strong><span>{fileSize(file.size)} · до {kind==="video"?"500":"100"} МБ</span><label>Подпись<textarea aria-label="Подпись к файлу" maxLength={10000} value={caption} disabled={uploading} onChange={e=>{clientId.current=v7();setCaption(e.target.value);}}/></label>{uploading&&<div role="status"><progress max={100} value={progress}/><span>{progress<100?`Загрузка ${progress}%`:"Завершаем отправку…"}</span></div>}<div className="inline-actions"><button type="button" className="primary-button" disabled={uploading} onClick={()=>void upload()}>Отправить файл</button><button type="button" className="secondary-button" onClick={cancel}>{uploading?"Отменить загрузку":"Отмена"}</button></div></div></Dialog>;
+  return <Dialog title={kind==="video"?"Отправить видео":"Отправить файл"} close={cancel}><div className="attachment-upload"><strong>{file.name}</strong><span>{fileSize(file.size)} · до {kind==="video"?"500":"100"} МБ</span><label>Подпись<textarea aria-label="Подпись к файлу" maxLength={10000} value={caption} disabled={uploading} onChange={e=>{clientId.current=v7();setCaption(e.target.value);}}/></label>{uploading&&<div role="status"><progress max={100} value={progress}/><span>{progress<100?`Загрузка ${progress}%`:"Завершаем отправку…"}</span></div>}<div className="inline-actions"><Button type="button" className="primary-button" disabled={uploading} onClick={()=>void upload()}>Отправить файл</Button><Button type="button" className="secondary-button" onClick={cancel}>{uploading?"Отменить загрузку":"Отмена"}</Button></div></div></Dialog>;
 }

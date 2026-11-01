@@ -99,6 +99,7 @@ async function listen() {
       else if (e.kind === "profile.changed")
         io.to(`user:${e.userId}`).emit("profile.changed", { userId: e.profileUserId });
       else if (e.kind === "chat.activity") io.to(`user:${e.userId}`).volatile.emit("chat.activity",e.activity);
+      else if(e.kind === "folders.changed")io.to(`user:${e.userId}`).emit("folders.changed");
       else if(e.kind === "draft.changed")io.to(`user:${e.userId}`).emit("draft.changed",{chatId:e.chatId});
       else if (e.kind === "receipt.changed") io.to(`user:${e.userId}`).emit("receipt.changed",{chatId:e.chatId});
       else io.to(`user:${e.userId}`).emit("chat.changed", { chatId: e.chatId });

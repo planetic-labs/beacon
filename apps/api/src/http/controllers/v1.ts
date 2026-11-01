@@ -1,3 +1,5 @@
+import {applyChatSelection} from "@api/modules/chat/selection";
+import {folderList,saveFolder,deleteFolder} from "@api/modules/chat/folders";
 import { draftList, saveDraft, pinChat } from "@api/modules/chat/preferences";
 import { chatAttachments, photoAlbum } from "@api/modules/chat/attachments";
 import { savedChat } from "@api/modules/chat/saved";
@@ -97,7 +99,16 @@ async function handler(
         return ok(await createChat(u, input));
       }
     }
+    if(p[0]==="chat-folders"){
+      if(p.length===1&&method==="GET")return ok(await folderList(u));
+      if((p.length===1&&method==="POST")||(p.length===2&&method==="PATCH")){
+        const input=z.object({name:z.string().trim().min(1).max(60),chatIds:z.array(uuid).max(200)}).parse(data);
+        return ok(await saveFolder(u,p[1]?uuid.parse(p[1]):undefined,input));
+      }
+      if(p.length===2&&method==="DELETE")return ok(await deleteFolder(u,uuid.parse(p[1])));
+    }
     if(p[0]==="drafts" && method==="GET")return ok(await draftList(u));
+    if(p[0]==="chats"&&p[1]==="selection"&&p.length===2&&method==="POST")return ok(await applyChatSelection(u,z.object({chatIds:z.array(uuid).min(1).max(100),action:z.enum(["mute","unmute","pin","unpin","folder","delete-own"]),folderId:uuid.optional()}).parse(data)));
     if (p[0] === "chats" && p[1]) {
       const chatId = uuid.parse(p[1]);
       if(p[2]==="draft"&&method==="PATCH"){

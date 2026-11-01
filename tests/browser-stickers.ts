@@ -62,15 +62,15 @@ try {
     await page.getByRole("button", { name: "Убрать фото 1", exact: true }).click();
     await expect(page.locator(".photo-preview")).toHaveCount(0);
 
-    if (width < 780) { await page.getByLabel("Прикрепить", { exact: true }).click(); await page.getByRole("button", { name: "Стикер", exact: true }).click(); }
-    else await page.getByRole("button", { name: "Выбрать стикер", exact: true }).click();
+    await page.getByRole("button", { name: "Прикрепить", exact: true }).click();
+    await page.getByRole("button", { name: "Стикер", exact: true }).click();
     await page.getByRole("button", { name: "Тестовый набор", exact: true }).click();
     await page.getByRole("textbox", { name: "Поиск стикеров", exact: true }).fill("👋");
     await page.getByRole("button", { name: "Отправить стикер Привет", exact: true }).click();
     await expect(page.locator(".message-sticker")).toBeVisible();
     assert.equal(await page.locator(".sticker-bubble").evaluate(node => getComputedStyle(node).backgroundColor), "rgba(0, 0, 0, 0)");
-    if (width < 780) { await page.getByLabel("Прикрепить", { exact: true }).click(); await page.getByRole("button", { name: "Стикер", exact: true }).click(); }
-    else await page.getByRole("button", { name: "Выбрать стикер", exact: true }).click();
+    await page.getByRole("button", { name: "Прикрепить", exact: true }).click();
+    await page.getByRole("button", { name: "Стикер", exact: true }).click();
     await expect(page.getByRole("button", { name: "Отправить стикер Привет", exact: true })).toBeVisible();
     const dialog = page.getByRole("dialog");
     const box = await dialog.boundingBox(); assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1);
@@ -112,6 +112,7 @@ try {
     await suggestion.click();
     await expect(composer).toHaveValue("");
     if (width < 780) await page.getByRole("button", { name: "Назад к списку", exact: true }).click();
+    if (width < 780) await page.getByRole("navigation", { name: "Навигация", exact: true }).getByRole("button", { name: "Ещё", exact: true }).click();
     await page.getByRole("button", { name: "Администрирование", exact: true }).click();
     await expect(page.getByRole("button", { name: "Отключить набор", exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Стикеры", exact: true }).click();
@@ -136,8 +137,8 @@ try {
     await expect(page.locator(".sticker-admin-tile")).toHaveCount(0);
     await page.goto(`${base}/chats/${chatId}`);
     await expect(page.locator(".message-sticker")).toBeVisible();
-    if (width < 780) { await page.getByLabel("Прикрепить", { exact: true }).click(); await page.getByRole("button", { name: "Стикер", exact: true }).click(); }
-    else await page.getByRole("button", { name: "Выбрать стикер", exact: true }).click();
+    await page.getByRole("button", { name: "Прикрепить", exact: true }).click();
+    await page.getByRole("button", { name: "Стикер", exact: true }).click();
     await expect(page.getByRole("button", { name: "Отправить стикер Привет", exact: true })).toHaveCount(0);
     await page.goto(`${base}/admin/stickers`);
 

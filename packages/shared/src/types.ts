@@ -11,6 +11,8 @@ export type User = {
   banned: boolean;
 };
 export type Chat = {
+  muted?:boolean;
+  historyRevision?:number;
   id: string;
   kind: "direct" | "group" | "saved";
   peerId?: string;
@@ -70,4 +72,6 @@ export type Pin = { id:string; authorName:string; text:string; type:string; pinn
 export type PinPage = { pins:Pin[]; total:number; next?:{id:string;at:string} };
 export type Presence = { userId:string; online:boolean; lastSeenAt:string|null };
 
-export type OfflineSnapshot = {messages:Message[];hasMoreRead:boolean;hasMoreUnread:boolean;unreadStartId?:string};
+export type OfflineSnapshot = {historyRevision?:number;messages:Message[];hasMoreRead:boolean;hasMoreUnread:boolean;unreadStartId?:string};
+
+export type ChatFolder = {id:string;name:string;chatIds:string[]};

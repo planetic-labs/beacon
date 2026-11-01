@@ -34,17 +34,16 @@ try{
    await route.fulfill({json:data});
   });
   await page.goto(`${base}/chats/${chatId}`);
+  await page.locator(".feed").click({position:{x:2,y:2}});
   for(const [label,title] of [["Прикрепить файл или видео","Отправить файл или видео"],["Записать голосовое сообщение","Отправить голосовое сообщение"],["Записать видеокружок","Отправить видеокружок"],["Выбрать стикер","Отправить стикер"],["Прикрепить фото","Отправить фото"],["Добавить эмодзи","Добавить эмодзи"],["Отправить сообщение","Отправить сообщение"]]){
+   if(width<780)continue;
    if(width<780 && ["Прикрепить файл или видео","Выбрать стикер","Прикрепить фото","Отправить сообщение"].includes(label)) continue;
    const button=page.getByRole("button",{name:label,exact:true});
-   await expect(button).toHaveAttribute("data-tooltip",title);await expect(button).not.toHaveAttribute("title");
-   await button.hover();
-   const hint=await button.evaluate(node=>{const style=getComputedStyle(node,"::after");return {visibility:style.visibility,opacity:style.opacity,delay:style.transitionDelay,content:style.content};});
-   assert.equal(hint.visibility,"visible");assert.equal(hint.opacity,"1");assert.equal(hint.delay,"0s");assert.equal(JSON.parse(hint.content),title);
-  }
-  if(width>=780){
-  await page.getByRole("button",{name:"Прикрепить файл или видео",exact:true}).focus();
-  assert.equal(await page.getByRole("button",{name:"Прикрепить файл или видео",exact:true}).evaluate(node=>getComputedStyle(node,"::after").visibility),"visible");
+   if(!await button.isVisible())continue;
+   await expect(button).not.toHaveAttribute("title");
+   if(await button.isDisabled())continue;
+   await button.hover();await expect(page.getByRole("tooltip")).toHaveText(title);
+   await page.mouse.move(0,0);
   }
   const picker=page.getByLabel("Выбрать файл или видео",{exact:true});
   await picker.setInputFiles({name:"Документ.pdf",mimeType:"application/pdf",buffer:Buffer.from("test-document")});

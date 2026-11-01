@@ -1,3 +1,4 @@
+import { Button } from "./app-button";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { Dialog } from "./ui";
 type Props={userId:string;choose:(emoji:string)=>void};
@@ -16,7 +17,7 @@ export function EmojiMenu({userId,choose,close}:{userId:string;choose:(emoji:str
   },[attempt]);
   return <Dialog title="Эмодзи" className="emoji-dialog" close={close}>
     <div className="emoji-menu-body">
-      {Picker?<Picker key={userId} userId={userId} choose={choose}/>:failed?<div className="emoji-menu-status" role="alert"><p>Не удалось загрузить эмодзи</p><button type="button" className="secondary-button" onClick={()=>setAttempt(n=>n+1)}>Повторить</button></div>:<p className="emoji-menu-status" role="status">Загружаем эмодзи…</p>}
+      {Picker?<Picker key={userId} userId={userId} choose={choose}/>:failed?<div className="emoji-menu-status" role="alert"><p>Не удалось загрузить эмодзи</p><Button type="button" className="secondary-button" onClick={()=>setAttempt(n=>n+1)}>Повторить</Button></div>:<p className="emoji-menu-status" role="status">Загружаем эмодзи…</p>}
     </div>
   </Dialog>;
 }

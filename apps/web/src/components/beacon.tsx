@@ -1,4 +1,15 @@
+import {SelectableChatRow} from "./chat-list-selection";
+import {ChatListActions,ChatSelectionBadge} from "./chat-list-actions";
+import {useTouchSwipe} from "./touch-swipe";
+import {useChatFolders,FolderTabs,FolderSettings} from "./chat-folders";
+import {ActionMenu} from "./action-menu";
+import { X, Reply, Forward, Copy, Trash2, MoreHorizontal, ChevronRight } from "lucide-react";
+import { MobileInteractions } from "./interaction-context";
+import { Form } from "react-aria-components";
+import { ActionPanel } from "./action-panel";
+import { Button } from "./app-button";
 import { MessageActions } from "./message-actions";
+import { Home } from "./home";
 import { Materials } from "./materials";
 import { Storage } from "./storage";
 import { StorageAdmin } from "./storage-admin";
@@ -20,6 +31,7 @@ import { SearchPanel } from "./search";
 import { useChatFeatures, DeliveryStatus, MentionSuggestions } from "./chat-features";
 import { moveMentions, type Mention, type SearchHit, normalizeEmail, stickerSuggestionQuery, type Sticker, type RecordingKind } from "@beacon/shared";
 import {
+  useMemo,
   useState,
   useEffect,
   useLayoutEffect,
@@ -44,6 +56,16 @@ import { Profile, Security, NewChat, UserForm, MembershipForm } from "./forms";
 import { PushSettings, ChatPushToggle, forgetPushDevice, pushWorker, syncPushDevice } from "./push-settings";
 export function Beacon(): ReactNode {
   const appFrame=useRef<HTMLDivElement>(null);
+  const observeComposerSize=useCallback((node:HTMLDivElement|null)=>{
+    if(!node)return;
+    const workspace=node.closest<HTMLElement>(".workspace");
+    const observer=new ResizeObserver(()=>{
+      const height=`${node.getBoundingClientRect().height}px`;
+      if(workspace?.style.getPropertyValue("--composer-height")!==height)workspace?.style.setProperty("--composer-height",height);
+    });
+    observer.observe(node);return ()=>observer.disconnect();
+  },[]);
+
   useEffect(()=>{
     const viewport=window.visualViewport;
     if(!viewport)return;
@@ -60,6 +82,7 @@ export function Beacon(): ReactNode {
   const [selectionMode,setSelectionMode]=useState(false),[selectedMessages,setSelectedMessages]=useState<string[]>([]);
   const [forwardSources,setForwardSources]=useState<Message[]>([]),[pinsRevision,setPinsRevision]=useState(0);
   const [attachment,setAttachment]=useState<{file:File;kind:AttachmentKind;chatId:string}|null>(null);
+  const [batchDeleting,setBatchDeleting]=useState<Message[]|null>(null);
   const [deleting,setDeleting]=useState<Message|null>(null),[deleteBusy,setDeleteBusy]=useState(false);
   const attachmentInput=useRef<HTMLInputElement>(null);
   const [searchRevision,setSearchRevision]=useState(0);
@@ -94,7 +117,7 @@ export function Beacon(): ReactNode {
     [me, setMe] = useState<User | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
-  const requestedSection = (pathname === "/settings" || pathname.startsWith("/settings/")) ? "profile" : pathname === "/admin" || pathname.startsWith("/admin/") ? "admin" : pathname === "/storage" ? "storage" : pathname === "/materials" ? "materials" : "chats";
+  const requestedSection = (pathname === "/settings" || pathname.startsWith("/settings/")) ? "profile" : pathname === "/admin" || pathname.startsWith("/admin/") ? "admin" : pathname === "/storage" ? "storage" : pathname === "/materials" ? "materials" : pathname === "/more" ? "more" : pathname === "/home" ? "home" : "chats";
   const section = me?.role !== "admin" && (requestedSection === "storage" || requestedSection === "materials") ? "chats" : requestedSection;
   useEffect(() => {
     if(me && me.role!=="admin" && (requestedSection==="storage"||requestedSection==="materials"))void navigate({to:"/",search:{},replace:true});
@@ -115,6 +138,7 @@ export function Beacon(): ReactNode {
     {path:"/settings/security",title:"Ключи доступа",icon:"key"},
     {path:"/settings/notifications",title:"Push-уведомления",icon:"bell"},
     {path:"/settings/stickers",title:"Стикеры",icon:"sticker"},
+    {path:"/settings/folders",title:"Папки чатов",icon:"chats"},
     {path:"/settings/data",title:"Данные на устройстве",icon:"storage"},
     {path:"/settings/about",title:"О приложении",icon:"info"},
   ] as const;
@@ -123,7 +147,7 @@ export function Beacon(): ReactNode {
   const activeSectionPage=section==="profile"?settingsPage:adminSections.find(item=>item.path===pathname)??adminSections[0];
   const sectionTitle=section==="profile"?"Настройки":"Администрирование";
   const adminPage = adminSections.find(item => item.path === pathname) ?? adminSections[0];
-  const sectionRoutes = { chats: "/", admin: "/admin", profile: "/settings", storage: "/storage", materials: "/materials" } as const;
+  const sectionRoutes = { chats: "/", admin: "/admin", profile: "/settings", storage: "/storage", materials: "/materials", more: "/more", home: "/home" } as const;
   const setSection = (value: keyof typeof sectionRoutes) => { draftSync.current.flush(); void navigate({ to: sectionRoutes[value], search: {} }); };
   const closeChat = () => { draftSync.current.flush(); setSelected(null); selectedRef.current = null; void navigate({ to: "/", search: {} }); };
   const [email, setEmail] = useState(""),
@@ -137,16 +161,16 @@ export function Beacon(): ReactNode {
     [messages, setMessages] = useState<Message[]>([]),
     [hasMore, setHasMore] = useState(false),
     [historyBusy, setHistoryBusy] = useState(false);
-  const [online, setOnline] = useState(true),
+  const [online, setOnline] = useState(false),
     [networkAvailable, setNetworkAvailable] = useState(true),
     [context, setContext] = useState<{
       kind: "reply" | "edit";
       message: Message;
     } | null>(null),
     [pending, setPending] = useState<Pending[]>([]);
-  function setDraft(value: string | ((before:string)=>string), sync = true) {
+  function setDraft(value: string | ((before:string)=>string), sync = true, explicitMentions?:Mention[]) {
     const next = typeof value === "function" ? value(draftValue.current) : value;
-    mentions.current = moveMentions(draftValue.current,next,mentions.current);
+    mentions.current = explicitMentions??moveMentions(draftValue.current,next,mentions.current);
     draftValue.current=next;setDraftValue(next);
     if(sync && selectedRef.current && context?.kind!=="edit"){
       const id=selectedRef.current;
@@ -222,7 +246,8 @@ export function Beacon(): ReactNode {
       if(cached){setMe(cached);setLoading(false);}
     }
     try {
-      setMe(await api<User>("me"));
+      const identity=await api<User>("me");
+      setMe(previous=>JSON.stringify(previous)===JSON.stringify(identity)?previous:identity);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setMe(null);
       else notify(e);
@@ -245,6 +270,16 @@ export function Beacon(): ReactNode {
     void api<Group[]>("admin/groups").then(value=>{if(active)setGroups(value);}).catch(error=>{if(active)notify(error);});
     return ()=>{active=false;};
   },[pathname,me?.role]);
+  const historyRevisions=useRef(new Map<string,number>());
+  function acceptHistoryRevision(id:string,revision:number){
+    const previous=historyRevisions.current.get(id)??0;if(revision<previous)return false;
+    historyRevisions.current.set(id,revision);
+    if(revision>previous&&selectedRef.current===id){
+      historyVersion.current++;messagesRef.current=[];setMessages([]);offlineWindowRef.current=null;setOfflineWindow(null);setHasMore(false);
+      aroundBusy.current=false;historicalRef.current=false;setHistorical(false);jumpRequest.current=null;setPinsRevision(value=>value+1);setSearchRevision(value=>value+1);
+    }
+    return true;
+  }
   const refreshLists = useCallback(async () => {
     const owner=localAccount();
     const [cs, us] = await Promise.all([
@@ -252,8 +287,12 @@ export function Beacon(): ReactNode {
       api<User[]>("users"),
     ]);
     if(localAccount()!==owner)return;
-    setChats(cs);
-    setUsers(us);
+    const currentChats=cs.map(chat=>({...chat,historyRevision:Math.max(chat.historyRevision??0,historyRevisions.current.get(chat.id)??0)}));
+    let reset=false;
+    for(const chat of currentChats){if((chat.historyRevision??0)>(historyRevisions.current.get(chat.id)??0)&&chat.id===selectedRef.current)reset=true;acceptHistoryRevision(chat.id,chat.historyRevision??0);}
+    setChats(previous=>JSON.stringify(previous)===JSON.stringify(currentChats)?previous:currentChats);
+    if(reset&&selectedRef.current)void refreshHistory(selectedRef.current).catch(notify);
+    setUsers(previous=>JSON.stringify(previous)===JSON.stringify(us)?previous:us);
   }, []);
   const refreshHistory = useCallback(async (id: string, older = false) => {
     if (older) setHistoryBusy(true);
@@ -267,7 +306,7 @@ export function Beacon(): ReactNode {
       let cursor = first,
         more = true,
         inclusive = true;
-      let result: { messages: Message[]; hasMore: boolean } = {
+      let result: { messages: Message[]; hasMore: boolean;historyRevision?:number } = {
         messages: [],
         hasMore: false,
       };
@@ -276,9 +315,12 @@ export function Beacon(): ReactNode {
         const query = cursor
           ? `?${forward ? "after" : "before"}Id=${cursor.id}&${forward ? "after" : "before"}At=${encodeURIComponent(cursor.createdAt)}${forward && inclusive ? "&inclusive=true" : ""}${through ? `&throughId=${through.id}` : ""}`
           : "";
-        result = await api<{ messages: Message[]; hasMore: boolean }>(
+        result = await api<{ messages: Message[]; hasMore: boolean;historyRevision?:number }>(
           `chats/${id}/messages${query}`,
         );
+        const revision=result.historyRevision??0,known=historyRevisions.current.get(id)??0;
+        if(revision<known)return;
+        if(revision>known){acceptHistoryRevision(id,revision);void refreshLists().then(()=>refreshHistory(id)).catch(notify);return;}
         if (selectedRef.current !== id || historyVersion.current!==version) return;
         collected.push(...result.messages);
         more = forward && result.hasMore;
@@ -424,6 +466,7 @@ export function Beacon(): ReactNode {
     const s = io(import.meta.env.VITE_SOCKET_URL || undefined, {
       withCredentials: true,
     });
+    setOnline(false);
     socket.current = s;
     const sync = () => {
       void refreshLists().catch(notify);
@@ -480,11 +523,41 @@ export function Beacon(): ReactNode {
   },[messages,context,target]);
   useEffect(()=>{setPhotoView(null);setAttachmentsOpen(false);setReadDetails(null);},[me?.id]);
   useOfflineSync(me?.id,section==="chats"?selected:null,socket);
+  useEffect(()=>{
+    const root=document.documentElement;
+    const canvas=getComputedStyle(root).getPropertyValue("--canvas").trim()||"#f5f2ed";
+    const color=!me||(section==="chats"&&selected)?canvas:section==="profile"||section==="admin"?"#f6f7fb":["materials","storage","more"].includes(section)?"#ffffff":"#f7f8fb";
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content",color);
+    root.style.setProperty("--system-background",color);
+  },[section,selected,!!me]);
+  const [selectedChatIds,setSelectedChatIds]=useState<string[]>([]);
+  const toggleChatSelection=(id:string)=>setSelectedChatIds(previous=>previous.includes(id)?previous.filter(value=>value!==id):previous.length<100?[...previous,id]:previous);
+  useEffect(()=>{setSelectedChatIds([]);},[section,me?.id]);
+  useEffect(()=>{setSelectedChatIds(previous=>{const next=previous.filter(id=>chats.some(chat=>chat.id===id));return next.length===previous.length?previous:next;});},[chats]);
+  const listRows=useRef<HTMLDivElement>(null);
+  const chatFolders=useChatFolders(me?.id,socket,notify);
   const draftSync=useDraftSync(me?.id,socket,`${me?.firstName}/${me?.lastName}`,(id,value)=>{
     drafts.current[id]=value.text;mentionDrafts.current[id]=value.mentions;
     if(selectedRef.current===id&&!editingRef.current){draftValue.current=value.text;setDraftValue(value.text);mentions.current=value.mentions;}
   });
   const presence=usePresence(me?.id,socket,`${me?.firstName}/${me?.lastName}`);
+  useTouchSwipe(feed,{enabled:device==="mobile"&&!loading&&!!me?.firstName&&!!me?.lastName&&section==="chats"&&!!selected&&chats.some(chat=>chat.id===selected)&&!selectionMode,scope:selected??"",direction:"left",
+    target:element=>{
+      if(element.closest("a,input,textarea,select,video,audio,[role=slider],[contenteditable=true]"))return null;
+      const button=element.closest("button,[role=button]");if(button&&!button.matches(".message-photo-open"))return null;
+      return element.closest<HTMLElement>("[data-message-id]");
+    },
+    progress:(distance,element,active)=>{
+      if(active){element.dataset.swipeActive="true";element.dataset.swipeClaimed="true";element.style.setProperty("--swipe-x",`${Math.max(-72,Math.min(0,distance))}px`);}
+      else{delete element.dataset.swipeActive;element.style.removeProperty("--swipe-x");}
+    },
+    swipe:(_direction,element)=>{const message=messagesRef.current.find(item=>item.id===element.dataset.messageId);if(message&&message.type!=="deleted")chooseContext("reply",message);},
+  });
+  useTouchSwipe(listRows,{enabled:device==="mobile"&&!loading&&!!me?.firstName&&!!me?.lastName&&section==="chats"&&!selected&&!searchOpen&&!selectedChatIds.length,direction:"both",
+    target:element=>element.closest("a,input,textarea,select,[contenteditable=true]")?null:listRows.current,
+    swipe:direction=>{const ids=["all",...chatFolders.folders.map(folder=>folder.id)],index=ids.indexOf(chatFolders.active),next=index+(direction==="left"?1:-1);if(next>=0&&next<ids.length)chatFolders.setActive(ids[next]);},
+  });
+
   useEffect(()=>{setSelectedMessages(ids=>ids.filter(id=>!messages.some(m=>m.id===id&&m.type==="deleted")));},[messages]);
   const {receipts,activity,recording,activityText} = useChatFeatures(me?.id,selected,messages,chats,feed,socket,refreshLists,`${me?.firstName}/${me?.lastName}`);
   useEffect(()=>{
@@ -523,7 +596,7 @@ export function Beacon(): ReactNode {
       const snapshot=await readCache<OfflineSnapshot>(`history/${selected}`);
       const cached=snapshot?.messages;
       if(!live||aroundBusy.current||historicalRef.current||jumpRequest.current?.chatId===selected)return;
-      if(cached){setMessages(cached);messagesRef.current=cached;setOfflineWindow(snapshot!);offlineWindowRef.current=snapshot!;setHasMore(snapshot!.hasMoreRead||snapshot!.hasMoreUnread);}
+      if(cached&&acceptHistoryRevision(selected,snapshot?.historyRevision??0)){setMessages(cached);messagesRef.current=cached;setOfflineWindow(snapshot!);offlineWindowRef.current=snapshot!;setHasMore(snapshot!.hasMoreRead||snapshot!.hasMoreUnread);}
       try{await refreshHistory(selected);}catch(error){if(live&&navigator.onLine)notify(error);}
     })();
     return()=>{live=false;};
@@ -533,9 +606,20 @@ export function Beacon(): ReactNode {
     let live=true;
     const updated=(event:Event)=>{if((event as CustomEvent<{chatId:string}>).detail.chatId!==selected)return;void readCache<OfflineSnapshot>(`history/${selected}`).then(snapshot=>{
       if(!live||!snapshot)return;
+      const oldRevision=historyRevisions.current.get(selected)??0;
+      if(!acceptHistoryRevision(selected,snapshot.historyRevision??0))return;
+      if((snapshot.historyRevision??0)>oldRevision){messagesRef.current=snapshot.messages;setMessages(snapshot.messages);}
       setOfflineWindow(snapshot);offlineWindowRef.current=snapshot;
       const byId=new Map(snapshot.messages.map(m=>[m.id,m]));
-      setMessages(previous=>previous.map(m=>byId.get(m.id)??m));
+      setMessages(previous=>{
+        let changed=false;
+        const next=previous.map(message=>{
+          const cached=byId.get(message.id);
+          if(!cached||JSON.stringify(cached)===JSON.stringify(message))return message;
+          changed=true;return cached;
+        });
+        return changed?next:previous;
+      });
     });};
     window.addEventListener("beacon:history-updated",updated);
     return()=>{live=false;window.removeEventListener("beacon:history-updated",updated);};
@@ -637,7 +721,7 @@ export function Beacon(): ReactNode {
       setBusy(false);
     }
   }
-  useEffect(() => { setPhotos([]); setRecordingKind(null); setAttachment(null);setDeleting(null);setSelectionMode(false);setSelectedMessages([]);setForwardSources([]);setPhotoView(null);setAttachmentsOpen(false);setReadDetails(null); }, [selected]);
+  useEffect(() => { setPhotos([]); setRecordingKind(null); setAttachment(null);setDeleting(null);setBatchDeleting(null);setSelectionMode(false);setSelectedMessages([]);setForwardSources([]);setPhotoView(null);setAttachmentsOpen(false);setReadDetails(null); }, [selected]);
   async function submitMessage(e: FormEvent) {
     e.preventDefault();
     if (!selected || (!draftValue.current.trim() && !photos.length) || busy || queueReady!==me?.id) return;
@@ -772,7 +856,8 @@ export function Beacon(): ReactNode {
   function chooseMention(user:User,start:number,end:number) {
     const label=`@${user.name}`, next=draftValue.current.slice(0,start)+label+" "+draftValue.current.slice(end);
     if(next.length>10000)return;
-    setDraft(next);mentions.current=[...mentions.current,{userId:user.id,start,length:label.length}];
+    const nextMentions=[...moveMentions(draftValue.current,next,mentions.current).filter(mention=>mention.start+mention.length<=start||mention.start>=start+label.length),{userId:user.id,start,length:label.length}];
+    setDraft(next,true,nextMentions);
     const position=start+label.length+1;setMentionCursor(position);
     requestAnimationFrame(()=>{textarea.current?.focus();textarea.current?.setSelectionRange(position,position);});
   }
@@ -780,6 +865,109 @@ export function Beacon(): ReactNode {
     setSearchScope(scope);setSearchOpen(true);if(section!=="chats")setSection("chats");
     if(device==="mobile")closeChat();
   }
+  const current = chats.find((c) => c.id === selected);
+  // Unrelated list, presence and dialog updates must not recreate the entire history.
+  const historyMarkup=useMemo(()=>{
+
+    if(!me||!current||!selected)return null;
+    return (messages.filter(message=>message.type!=="deleted").map((m, i, visibleMessages) => {
+                      const previous=visibleMessages[i-1];
+                      const continued=!!previous&&previous.authorId===m.authorId&&new Date(previous.createdAt).toDateString()===new Date(m.createdAt).toDateString()&&!(offlineWindow?.hasMoreUnread&&m.id===offlineWindow.unreadStartId);
+                      return (
+                      <div key={m.id} id={`message-${m.id}`}>
+                        <>
+                          {offlineWindow?.hasMoreUnread&&m.id===offlineWindow.unreadStartId&&<div className="offline-history-note">Часть истории между этими сообщениями ещё не загружена.{networkAvailable&&<Button className="text-button" type="button" onClick={()=>void loadAround(selected,m.id).catch(notify)}>Загрузить пропущенную историю</Button>}</div>}
+                          {(i === 0 ||
+                            new Date(
+                              visibleMessages[i - 1].createdAt,
+                            ).toDateString() !==
+                              new Date(m.createdAt).toDateString()) && (
+                            <div className="date-divider">
+                              <span>
+                                {new Date(m.createdAt).toLocaleDateString("ru")}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                        <MessageActions
+                          id={m.id} enabled={m.type!=="deleted"&&!selectionMode} pinned={!!m.pinned} selecting={selectionMode} textual={m.type==="text"}
+                          className={`message-group ${continued?"continued-message":""} ${m.authorId === me.id ? "outgoing" : ""} ${selectedMessages.includes(m.id)?"selected-message":""} ${selectionMode?"selectable-message":""}`}
+                          reply={()=>chooseContext("reply",m)}
+                          copy={m.content.text||m.content.name?()=>{const text=m.content.text||m.content.name||"";if(!navigator.clipboard){notify(new Error("Копирование недоступно в этом браузере"));return;}void navigator.clipboard.writeText(text).catch(notify);}:undefined}
+                          edit={m.authorId===me.id&&["text","photo"].includes(m.type)?()=>chooseContext("edit",m):undefined}
+                          forward={()=>{setForwardSources([m]);setTarget(null);setModal("forward");}}
+                          pin={()=>void togglePin(m)} select={()=>{setSelectionMode(true);toggleSelected(m.id);}}
+                          remove={m.authorId===me.id?()=>setDeleting(m):undefined}
+                          reaction={()=>{setTarget(m);setModal("reaction");}} quickReaction={emoji=>void reaction(emoji,m)}
+                        >
+                          {selectionMode&&m.type!=="deleted"&&<input type="checkbox" className="message-selection" aria-label={`Выбрать сообщение ${m.authorName}: ${(m.content.text||m.content.name||"Вложение").slice(0,60)}`} checked={selectedMessages.includes(m.id)} disabled={!selectedMessages.includes(m.id)&&selectedMessages.length>=100} onChange={()=>toggleSelected(m.id)}/>}
+                          <div className="message-avatar">
+                            {!continued&&<Avatar name={m.authorId===me.id?me.name:m.authorName}
+                              image={m.authorId===me.id?me.image:users.find(u=>u.id===m.authorId)?.image??m.authorImage} extra="green"/>}
+                          </div>
+                          <div className="group-body">
+                            <div className="message-heading">
+                              {!continued&&<div className="author">{m.authorId===me.id?me.name:users.find(u=>u.id===m.authorId)?.name??m.authorName}</div>}
+                              <div className="message-meta">
+                                {current.kind!=="saved"&&m.type!=="deleted"&&m.authorId===me.id&&<DeliveryStatus receipts={receipts} message={m} open={()=>setReadDetails(m)}/>}
+                                <time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleTimeString("ru",{hour:"2-digit",minute:"2-digit"})}</time>
+                              </div>
+                            </div>
+                            <div className="bubble-row">
+                              <div className={`bubble ${["text","photo","sticker"].includes(m.type)?"flat-message":""} ${m.type === "sticker" ? "sticker-bubble" : ""}`}>
+                                {m.forwardedFrom && (
+                                  <div className="forwarded">
+                                    Переслано · {m.forwardedFrom.authorName}
+                                  </div>
+                                )}
+                                {m.reply && (
+                                  <Button
+                                    className="message-quote"
+                                    onClick={() => void jump(m)}
+                                  >
+                                    {m.reply.authorName}: {m.reply.text}
+                                  </Button>
+                                )}
+                                <span className="bubble-text">
+                                  {renderMessage(m.type, m.content, me.id, id=>{if(id!==me.id)void startDirectChat(id);}, index=>setPhotoView({chatId:m.chatId,messageId:m.id,index}))}
+                                </span>
+                                {current.kind==="direct"&&<span className="message-inline-meta">
+                                  <time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleTimeString("ru",{hour:"2-digit",minute:"2-digit"})}</time>
+                                  {m.authorId===me.id&&<DeliveryStatus receipts={receipts} message={m} open={()=>setReadDetails(m)}/>}
+                                </span>}
+                                {m.editedAt && <span className="message-edited" title={new Date(m.editedAt).toLocaleString("ru")}>Изменено</span>}
+
+                              </div>
+                            </div>
+                            {m.type!=="deleted"&&!selectionMode&&!!m.reactions.length&&<div className="message-tools">
+                              {[
+                                ...new Set(m.reactions.map((r) => r.emoji)),
+                              ].map((emoji) => (
+                                <Button
+                                  key={emoji}
+                                  className={`reaction-pill ${m.reactions.some((r) => r.emoji === emoji && r.userId === me.id) ? "mine" : ""}`}
+                                  title={m.reactions
+                                    .filter((r) => r.emoji === emoji)
+                                    .map((r) => r.name)
+                                    .join(", ")}
+                                  onClick={() => {
+                                    setTarget(m);
+                                    setModal("reaction");
+                                  }}
+                                >
+                                  {emoji}{" "}
+                                  {
+                                    m.reactions.filter((r) => r.emoji === emoji)
+                                      .length
+                                  }
+                                </Button>
+                              ))}
+                            </div>}
+                          </div>
+                        </MessageActions>
+                      </div>
+                    );}));
+  },[messages,me,users,receipts,selected,selectionMode,selectedMessages,!!offlineWindow?.hasMoreUnread,offlineWindow?.hasMoreUnread?offlineWindow.unreadStartId:undefined,networkAvailable,current?.kind]);
   if (loading)
     return (
       <main className="startup-screen" role="status" aria-live="polite">
@@ -791,13 +979,13 @@ export function Beacon(): ReactNode {
   const toast = error && (
     <div className="notice error toast" role="alert">
       {error}
-      <button
+      <Button
         className="text-button"
         onClick={() => setError("")}
         aria-label="Закрыть уведомление"
       >
         ×
-      </button>
+      </Button>
     </div>
   );
   if (!me)
@@ -808,7 +996,7 @@ export function Beacon(): ReactNode {
           <section className="auth-card minimal">
             {step === "email" ? (
               <>
-                <form className="minimal-auth-form" onSubmit={requestCode}>
+                <Form className="minimal-auth-form" onSubmit={requestCode}>
                   <div
                     className={`minimal-field ${busy ? "processing" : ""} ${error ? "invalid" : ""}`}
                   >
@@ -826,7 +1014,7 @@ export function Beacon(): ReactNode {
                       onChange={(e) => setEmail(normalizeEmail(e.target.value))}
                       disabled={busy}
                     />
-                    <button
+                    <Button
                       type="submit"
                       className="email-field-action email-submit-action"
                       aria-label="Получить код"
@@ -834,14 +1022,14 @@ export function Beacon(): ReactNode {
                       disabled={busy || !email.trim()}
                     >
                       <Icon name="next" />
-                    </button>
+                    </Button>
                   </div>
-                </form>
+                </Form>
               </>
             ) : (
               <>
                 <div className="code-surface">
-                  <form
+                  <Form
                     className="minimal-auth-form"
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -878,10 +1066,10 @@ export function Beacon(): ReactNode {
                         }}
                       />
                     </div>
-                    <button className="sr-only">Проверить код</button>
-                  </form>
+                    <Button className="sr-only">Проверить код</Button>
+                  </Form>
                   <div className="code-navigation">
-                    <button
+                    <Button
                       className="code-back"
                       aria-label="Вернуться к вводу email"
                       onClick={() => {
@@ -891,11 +1079,11 @@ export function Beacon(): ReactNode {
                       }}
                     >
                       <Icon name="back" />
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 <div className="auth-extra">
-                  <button
+                  <Button
                     className="text-button"
                     disabled={busy || cooldown > 0}
                     onClick={() => void requestCode()}
@@ -903,7 +1091,7 @@ export function Beacon(): ReactNode {
                     {cooldown
                       ? `Повторить через ${cooldown} с`
                       : "Отправить код повторно"}
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -923,12 +1111,18 @@ export function Beacon(): ReactNode {
         </main>
       </div>
     );
-  const current = chats.find((c) => c.id === selected);
+
+  // The live socket confirms our own connection before the presence lease/query catches up.
+  const onlinePeople=[...presence.people.values()].filter(person=>person.userId!==me.id&&person.online).length+(online?1:0);
+  const totalPeople=presence.people.size?presence.people.size+(presence.people.has(me.id)?0:1):0;
   const saved=chats.find(c=>c.kind==="saved");
-  const listedChats = chats.filter(c => c.kind!=="saved"&&(c.pinned || c.kind === "group" || c.lastAt));
+  const allListedChats = chats.filter(c => c.kind!=="saved"&&(c.pinned || c.kind === "group" || c.lastAt));
   const emptyDirectChats = new Map(chats.filter(c => c.kind === "direct" && !c.lastAt && !c.pinned).map(c => [c.peerId, c]));
-  const directUserIds = new Set(listedChats.filter(c => c.kind === "direct").map(c => c.peerId));
-  const availableUsers = users.filter(u => u.id !== me.id && !directUserIds.has(u.id));
+  const directUserIds = new Set(allListedChats.filter(c => c.kind === "direct").map(c => c.peerId));
+  const allAvailableUsers = users.filter(u => u.id !== me.id && !directUserIds.has(u.id));
+  const activeFolder=chatFolders.folders.find(folder=>folder.id===chatFolders.active);
+  const listedChats=activeFolder?chats.filter(chat=>chat.kind!=="saved"&&activeFolder.chatIds.includes(chat.id)):allListedChats;
+  const availableUsers=activeFolder?[]:allAvailableUsers;
   const ensureSaved=async()=>saved??await api<{id:string}>("chats/saved","POST",{});
   const openSaved=async()=>{if(busy)return;setBusy(true);try{const chat=await ensureSaved();await refreshLists();openChat(chat.id);}catch(error){notify(error);}finally{setBusy(false);}};
   const queueForwards=(chatId:string)=>{
@@ -950,33 +1144,36 @@ export function Beacon(): ReactNode {
     } catch (e) { notify(e); }
     finally { setBusy(false); }
   };
+  async function selectNewConversation(user:User){
+    if(busy||user.banned)return;setBusy(true);
+    try{const chat=await api<{id:string}>("chats","POST",{kind:"direct",userIds:[user.id]});await refreshLists();toggleChatSelection(chat.id);}catch(error){notify(error);}finally{setBusy(false);}
+  }
   const nav = (
     <aside className="nav-rail" aria-label="Основная навигация">
-      <button
+      <Button
         type="button"
-        className="rail-action"
+        className={`rail-action ${section === "home" ? "active" : ""}`}
         aria-label="Главная"
-        aria-haspopup="dialog"
-        onClick={() => setUpcomingService("Главная")}
+        onClick={() => setSection("home")}
       >
         <Icon name="home" />
         <span className="rail-tooltip" aria-hidden="true">Главная</span>
-      </button>
-      <button
+      </Button>
+      <Button
         className={`rail-action ${section === "chats" ? "active" : ""}`}
         onClick={() => {setSearchOpen(false);setSection("chats");}}
         aria-label="Чаты"
       >
         <Icon name="chats" />
         <span className="rail-tooltip" aria-hidden="true">Чаты</span>
-      </button>
+      </Button>
       {([
         ["search", "Поиск"],
         ["materials", "Материалы"],
         ["navigator", "Навигатор"],
         ["storage", "Хранилище"],
       ] as const).filter(([icon]) => me.role === "admin" || (icon !== "storage" && icon !== "materials")).map(([icon, label]) => (
-        <button
+        <Button
           key={icon}
           className={`rail-action ${(icon === "storage" && section === "storage") || (icon === "materials" && section === "materials") ? "active" : ""}`}
           aria-label={label}
@@ -985,48 +1182,37 @@ export function Beacon(): ReactNode {
         >
           <Icon name={icon} />
           <span className="rail-tooltip" aria-hidden="true">{label}</span>
-        </button>
+        </Button>
       ))}
       {me.role === "admin" && (
-        <button
+        <Button
           className={`rail-action ${section === "admin" ? "active" : ""}`}
           onClick={() => setSection("admin")}
           aria-label="Администрирование"
         >
           <Icon name="settings" />
           <span className="rail-tooltip" aria-hidden="true">Администрирование</span>
-        </button>
+        </Button>
       )}
       <span className="rail-spacer" />
-      <button
+      <Button
         className={`rail-action ${section === "profile" ? "active" : ""}`}
         onClick={() => setSection("profile")}
         aria-label="Настройки"
       >
         {me.image ? <Avatar name={me.name} image={me.image} extra="rail-profile-avatar" /> : <Icon name="profile" />}
         <span className="rail-tooltip" aria-hidden="true">Настройки</span>
-      </button>
+      </Button>
     </aside>
   );
   const mobileNavigation = (
-    <nav className="mobile-bottom" aria-label="Навигация" style={{gridTemplateColumns:`repeat(${me.role === "admin" ? 5 : 2}, minmax(0, 1fr))`}}>
-            <button className={section === "chats" ? "active" : undefined} aria-current={section === "chats" ? "page" : undefined} onClick={()=>{setSearchOpen(false);setSection("chats");}}>
-              <Icon name="chats" />
-              <span>Чаты</span>
-            </button>
-            {me.role === "admin" && <><button onClick={() => setSection("materials")}><Icon name="materials" /><span>Материалы</span></button>
-            <button className={section === "storage" ? "active" : undefined} aria-current={section === "storage" ? "page" : undefined} onClick={() => setSection("storage")}><Icon name="storage" /><span>Хранилище</span></button></>}
-            {me.role === "admin" ? (
-              <button onClick={() => setSection("admin")}>
-                <Icon name="settings" />
-                <span>Администрирование</span>
-              </button>
-            ) : null}
-            <button onClick={() => setSection("profile")}>
-              <Icon name="settings" />
-              <span>Настройки</span>
-            </button>
-          </nav>
+    <nav className="mobile-bottom" aria-label="Навигация" style={{gridTemplateColumns:"repeat(5, minmax(0, 1fr))"}}>
+      <Button className={section==="home"?"active":undefined} aria-current={section==="home"?"page":undefined} onClick={()=>setSection("home")}><Icon name="home"/><span>Главная</span></Button>
+      <Button className={section==="materials"?"active":undefined} aria-current={section==="materials"?"page":undefined} onClick={()=>me.role==="admin"?setSection("materials"):setUpcomingService("Материалы")}><Icon name="materials"/><span>Материалы</span></Button>
+      <Button className={section==="chats"?"active":undefined} aria-current={section==="chats"?"page":undefined} onClick={()=>{setSearchOpen(false);setSection("chats");}}><Icon name="chats"/><span>Чаты</span></Button>
+      <Button className={section==="storage"?"active":undefined} aria-current={section==="storage"?"page":undefined} onClick={()=>me.role==="admin"?setSection("storage"):setUpcomingService("Хранилище")}><Icon name="storage"/><span>Хранилище</span></Button>
+      <Button className={section==="more"||section==="profile"||section==="admin"?"active":undefined} aria-current={section==="more"||section==="profile"||section==="admin"?"page":undefined} onClick={()=>setSection("more")}><MoreHorizontal/><span>Ещё</span></Button>
+    </nav>
   );
   function chooseEmoji(emoji:string){
     const before=draftValue.current;
@@ -1049,65 +1235,66 @@ export function Beacon(): ReactNode {
     if (context?.kind === "edit") {setDraft(drafts.current[selected!] ?? "",false);mentions.current=mentionDrafts.current[selected!]??[];}
     setContext(null);
   }
+  const chosenMessages=messages.filter(message=>selectedMessages.includes(message.id)&&message.type!=="deleted");
+  const copyText=chosenMessages.map(message=>message.content.text||message.content.name||"").filter(Boolean).join("\n\n");
+  const cancelSelection=()=>{setSelectionMode(false);setSelectedMessages([]);};
+  async function removeSelectedMessages(){
+    if(!batchDeleting||deleteBusy)return;
+    const items=batchDeleting,removed:string[]=[];setDeleteBusy(true);
+    try{
+      for(const message of items){await api(`messages/${message.id}`,"DELETE");removed.push(message.id);}
+      cancelSelection();
+    }catch(error){notify(error);}finally{
+      setSelectedMessages(ids=>ids.filter(id=>!removed.includes(id)));setBatchDeleting(null);setDeleteBusy(false);
+      if(context&&removed.includes(context.message.id)){setContext(null);if(selected)setDraft(drafts.current[selected]??"",false);}
+      setSearchRevision(value=>value+1);
+      try{await refreshLists();if(selected)await refreshHistory(selected);}catch(error){notify(error);}
+    }
+  }
   return (
-    <div className="app" data-device={device}>
+    <MobileInteractions.Provider value={device==="mobile"}><div ref={appFrame} className="app" data-device={device}>
       {toast}
-      {section === "materials" ? <div className="materials-shell">{nav}<Materials back={() => setSection("chats")} /></div> : section === "storage" ? <div className="storage-shell">{nav}<Storage />{mobileNavigation}</div> : section === "chats" ? (
+      {section === "home" ? <div className="home-shell">{nav}<Home name={me.firstName} chats={()=>setSection("chats")} saved={()=>void openSaved()} materials={()=>me.role==="admin"?setSection("materials"):setUpcomingService("Материалы")} storage={()=>me.role==="admin"?setSection("storage"):setUpcomingService("Хранилище")}/>{mobileNavigation}</div> : section === "more" ? <div className="more-shell">{nav}<main className="more-main">
+        <h1>Ещё</h1>
+        <Button className="more-profile" onClick={()=>void navigate({to:"/settings/profile",search:{}})}><Avatar name={me.name} image={me.image}/><span><strong>{me.name}</strong><small>Мой профиль</small></span><ChevronRight/></Button>
+        <nav className="more-links" aria-label="Дополнительные разделы">
+          <Button onClick={()=>void navigate({to:"/settings/stickers",search:{}})}><Icon name="sticker"/><span>Мои стикеры</span><ChevronRight/></Button>
+          <Button onClick={()=>setSection("profile")}><Icon name="settings"/><span>Настройки</span><ChevronRight/></Button>
+          {me.role==="admin"&&<Button onClick={()=>setSection("admin")}><Icon name="settings"/><span>Администрирование</span><ChevronRight/></Button>}
+        </nav>
+      </main>{mobileNavigation}</div> : section === "materials" ? <div className="materials-shell">{nav}<Materials back={() => setSection("chats")} />{mobileNavigation}</div> : section === "storage" ? <div className="storage-shell">{nav}<Storage />{mobileNavigation}</div> : section === "chats" ? (
         <div className={`chat-shell ${selected ? "has-chat" : ""}`} data-chat-kind={current?.kind}>
           {nav}
           {searchOpen ? <SearchPanel key={searchScope?.id??"global"} revision={searchRevision} scope={searchScope} users={users} chats={chats} openChat={openChat} openPerson={id=>void startDirectChat(id)} openMessage={hit=>void openSearchMessage(hit)} close={()=>setSearchOpen(false)}/> : <section className="chat-list">
-            <header className="list-header">
-              <div className="list-presence">
-                <div>
-                  <strong>{me.name}</strong>
-                  <span>
-                    {online ? "Подключено" : "Связь восстанавливается"}
-                  </span>
-                </div>
-                <button
-                  className="profile-avatar-button"
-                  onClick={() => void navigate({to:"/settings/profile",search:{}})}
-                  aria-label="Открыть профиль"
-                >
-                  <Avatar name={me.name} image={me.image} extra="self-avatar warm" />
-                </button>
+            <header className="list-header compact-list-header">
+              {selectedChatIds.length?<ChatListActions chats={chats.filter(chat=>selectedChatIds.includes(chat.id))} folders={chatFolders.folders} cancel={()=>setSelectedChatIds([])} refresh={async action=>{if(action==="delete-own"&&context?.message.authorId===me.id&&selectedChatIds.includes(context.message.chatId))cancelContext();await refreshLists();await chatFolders.refresh();}} notify={notify}/>:<>
+              <h1 className="sr-only">Чаты</h1>
+              <Button className="profile-avatar-button" onClick={()=>void navigate({to:"/settings/profile",search:{}})} aria-label="Открыть профиль"><span className="presence-avatar"><Avatar name={me.name} image={me.image} extra="self-avatar warm"/><span className={`online-dot profile-connection-dot ${online?"connected":"connecting"}`} aria-hidden="true"/></span><span className="profile-connection-label" role="status">{online?totalPeople?<><strong className="profile-online-count">{onlinePeople}</strong> из {totalPeople} в сети</>:"Подключено":"Подключается…"}</span></Button>
+              <div className="inline-actions">
+                  <Button className="icon-button" aria-label="Открыть поиск" onClick={()=>beginSearch()}><Icon name="search"/></Button>
+                  <ActionMenu label="Меню списка чатов" icon={<MoreHorizontal/>} triggerClassName="icon-button" className="chat-list-actions" items={[
+                    {id:"group",label:"Создать группу",action:()=>{setModal("new");}},
+                    {id:"saved",label:"Избранное",action:()=>void openSaved(),disabled:busy},
+                  ]}/>
               </div>
-              <div className="list-heading">
-                <h1>Чаты</h1>
-                <div className="inline-actions">
-                  <button className="icon-button" aria-label="Открыть поиск" onClick={()=>beginSearch()}><Icon name="search"/></button>
-                  <button className="icon-button saved-chat-button" aria-label="Избранное" aria-pressed={!!saved&&selected===saved.id} data-tooltip="Избранное" onClick={()=>void openSaved()} disabled={busy}><Icon name="bookmark"/></button>
-                  <button
-                    className="icon-button"
-                    onClick={() => setModal("new")}
-                    aria-label="Создать чат"
-                  >
-                    <Icon name="plus" />
-                  </button>
-                  <button
-                    className="icon-button"
-                    onClick={() => void refreshLists().catch(notify)}
-                    aria-label="Обновить список"
-                  >
-                    <Icon name="refresh" />
-                  </button>
-                </div>
-              </div>
+              </>}
             </header>
-            <div className="chat-rows">
+            <FolderTabs folders={chatFolders.folders} active={chatFolders.active} choose={chatFolders.setActive} chats={chats}/>
+            <div className="chat-rows" ref={listRows}>
               {listedChats.map((c) => (
-                <button
+                <SelectableChatRow
+                  id={c.id} selected={selectedChatIds.includes(c.id)} selecting={!!selectedChatIds.length} toggle={toggleChatSelection}
                   className={`chat-row ${selected === c.id ? "active" : ""}`}
                   key={c.id}
-                  onClick={() => openChat(c.id)}
+                  open={() => openChat(c.id)}
                 >
                   <span className="presence-avatar"><Avatar
                     name={c.name ?? "Чат"}
                     image={c.avatar}
                     extra={c.kind === "group" ? "warm" : ""}
-                  />{c.kind==="direct"&&presence.people.get(c.peerId??"")?.online&&<span className="online-dot" aria-label="В сети"/>}</span>
+                  />{selectedChatIds.includes(c.id)?<ChatSelectionBadge/>:!selectedChatIds.length&&c.kind==="direct"&&presence.people.get(c.peerId??"")?.online&&<span className="online-dot" aria-label="В сети"/>}</span>
                   <div className="chat-row-main">
-                    <div className="chat-row-title">{c.pinned&&<Icon name="pin"/>}{c.name}</div>
+                    <div className="chat-row-title">{c.pinned&&<Icon name="pin"/>}{c.name}{c.muted&&<Icon name="bellOff"/>}</div>
                     <div className="chat-row-preview">
                       {c.preview ?? "Сообщений пока нет"}
                     </div>
@@ -1124,39 +1311,41 @@ export function Beacon(): ReactNode {
                     {!!c.unreadMentions && <span className="unread mention-badge" title="Вас упомянули" aria-label="Вас упомянули">@</span>}
                     {c.unread > 0 && <span className="unread">{c.unread}</span>}
                   </div>
-                </button>
+                </SelectableChatRow>
               ))}
               {availableUsers.map(u => (
-                <button
+                <SelectableChatRow
+                  selectNew={!u.banned?()=>void selectNewConversation(u):undefined} id={emptyDirectChats.get(u.id)?.id} selected={selectedChatIds.includes(emptyDirectChats.get(u.id)?.id??"")} selecting={!!selectedChatIds.length} toggle={toggleChatSelection}
                   className={`chat-row ${selected === emptyDirectChats.get(u.id)?.id ? "active" : ""}`}
                   key={`user:${u.id}`}
                   disabled={(!emptyDirectChats.has(u.id) && u.banned) || busy}
-                  onClick={() => {
+                  open={() => {
                     const existing = emptyDirectChats.get(u.id);
                     if (existing) openChat(existing.id);
                     else void startDirectChat(u.id);
                   }}
                 >
-                  <span className="presence-avatar"><Avatar name={u.name} image={u.image} />{!u.banned&&presence.people.get(u.id)?.online&&<span className="online-dot" aria-label="В сети"/>}</span>
+                  <span className="presence-avatar"><Avatar name={u.name} image={u.image} />{selectedChatIds.includes(emptyDirectChats.get(u.id)?.id??"")?<ChatSelectionBadge/>:!selectedChatIds.length&&!u.banned&&presence.people.get(u.id)?.online&&<span className="online-dot" aria-label="В сети"/>}</span>
                   <div className="chat-row-main">
                     <div className="chat-row-title">{u.name}</div>
                     <div className="chat-row-preview">
                       {u.banned ? "Доступ приостановлен" : presenceText(presence.people.get(u.id),presence.now)}
                     </div>
                   </div>
-                </button>
+                </SelectableChatRow>
               ))}
-              {!chats.length && !availableUsers.length && (
+              {activeFolder&&!listedChats.length&&<div className="empty-state"><p>В этой папке пока нет переписок. Добавьте их в настройках папок чатов.</p></div>}
+              {!activeFolder&&!chats.length && !availableUsers.length && (
                 <div className="empty-state">
                   <div>
                     <h2>Пока нет переписок</h2>
                     <p>Выберите участника или создайте групповой чат.</p>
-                    <button
+                    <Button
                       className="primary-button"
                       onClick={() => setModal("new")}
                     >
                       Начать общение
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
@@ -1165,8 +1354,12 @@ export function Beacon(): ReactNode {
           <section className="workspace">
             {selected && current ? (
               <>
-                <header className="chat-header">
-                  <button
+                <header className={`chat-header ${selectionMode?"selection-header":""}`}>
+                  {selectionMode?<>
+                    <Button className="selection-cancel" aria-label="Отменить выбор" onClick={cancelSelection}><X/></Button>
+                    <div className="selection-toolbar"><span>Выбрано: {selectedMessages.length} / 100</span></div>
+                  </>:<>
+                  <Button
                     className="back-button"
                     aria-label="Назад к списку"
                     onClick={() => {
@@ -1176,7 +1369,7 @@ export function Beacon(): ReactNode {
                     }}
                   >
                     <Icon name="back" />
-                  </button>
+                  </Button>
                   <div className="chat-peer-pill">
                   {current.kind==="saved"?<span className="avatar saved-avatar"><Icon name="bookmark"/></span>:<Avatar
                     name={current.name ?? "Чат"}
@@ -1184,44 +1377,34 @@ export function Beacon(): ReactNode {
                     extra="warm"
                   />}
                   <div className="chat-header-copy">
-                    <button type="button" className="chat-header-title chat-attachments-title" aria-label="Вложения чата" title="Вложения чата" onClick={()=>setAttachmentsOpen(true)}><span>{current.name}</span><Icon name="file"/></button>
+                    <Button type="button" className="chat-header-title chat-attachments-title" aria-label="Вложения чата" title="Вложения чата" onClick={()=>setAttachmentsOpen(true)}><span>{current.name}</span><Icon name="file"/></Button>
                     <div className="chat-header-subtitle">
                       {current.kind==="saved"?"Личные заметки":activityText || (current.kind === "group" ? "Групповой чат" : presenceText(presence.people.get(current.peerId??""),presence.now))}
                     </div>
                   </div>
                   </div>
-                  <details className="chat-header-menu" key={`${selected}/${device}`} open={device!=="mobile"?true:undefined}>
-                    <summary aria-label="Действия с чатом"><Icon name="menu"/></summary>
-                    <div className="chat-header-menu-items" onClick={event=>{if(device==="mobile"&&(event.target as HTMLElement).closest("button"))event.currentTarget.closest("details")?.removeAttribute("open");}}>
-                    {device==="mobile"&&<button className="icon-button" aria-label="Вложения чата" onClick={()=>setAttachmentsOpen(true)}><Icon name="file"/></button>}
-                  <button className="icon-button" aria-label={current.pinned?"Открепить чат":"Закрепить чат"} title={current.pinned?"Открепить чат":"Закрепить чат"} aria-pressed={!!current.pinned} onClick={()=>void api(`chats/${selected}/pin`,"PATCH",{pinned:!current.pinned}).then(()=>refreshLists()).catch(notify)}><Icon name="pin"/></button>
-                  <button className="icon-button" aria-label="Поиск в чате" onClick={()=>beginSearch({id:selected,name:current.name})}><Icon name="search"/></button>
-                  <button className="icon-button" aria-label="Выбрать сообщения" aria-pressed={selectionMode} onClick={()=>{setSelectionMode(value=>!value);setSelectedMessages([]);}}><Icon name="select"/></button>
-                  {current.kind!=="saved"&&<ChatPushToggle chatId={selected} notify={notify}/>}
-                  {current.kind === "group" && (
-                    <button
-                      className="icon-button"
-                      onClick={() => void loadManagement(selected)}
-                      aria-label="Участники и настройки чата"
-                    >
-                      <Icon name="menu" />
-                    </button>
-                  )}
-                    </div>
-                  </details>
+                  {device==="desktop"&&<Button className="icon-button desktop-chat-search" aria-label="Поиск в чате" onClick={()=>beginSearch({id:selected,name:current.name})}><Icon name="search"/></Button>}
+                  <ActionPanel label="Действия с чатом" icon={<Icon name="menu"/>} className="mobile-chat-actions" triggerClassName="mobile-chat-menu-trigger">
+                    <Button className="icon-button" aria-label="Вложения чата" onClick={()=>setAttachmentsOpen(true)}><Icon name="file"/></Button>
+                    <Button className="icon-button" aria-label={current.pinned?"Открепить чат":"Закрепить чат"} onClick={()=>void api(`chats/${selected}/pin`,"PATCH",{pinned:!current.pinned}).then(()=>refreshLists()).catch(notify)}><Icon name="pin"/></Button>
+                    {device==="mobile"&&<Button className="icon-button" aria-label="Поиск в чате" onClick={()=>beginSearch({id:selected,name:current.name})}><Icon name="search"/></Button>}
+                    <Button className="icon-button" aria-label="Выбрать сообщения" onClick={()=>{setSelectionMode(value=>!value);setSelectedMessages([]);}}><Icon name="select"/></Button>
+                    {current.kind!=="saved"&&<ChatPushToggle key={`${selected}/${current.muted??false}`} chatId={selected} notify={notify}/>}
+                    {current.kind==="group"&&<Button className="icon-button" aria-label="Участники и настройки чата" onClick={()=>void loadManagement(selected)}><Icon name="menu"/></Button>}
+                  </ActionPanel>
+                  </>}
                 </header>
-                <PinnedMessages key={selected} chatId={selected} socket={socket} connectionKey={`${me.firstName}/${me.lastName}`} changed={pinsRevision} onChanged={(id,pinned)=>setMessages(items=>items.map(m=>m.id===id?{...m,pinned}:m))} jump={id=>void loadAround(selected,id).catch(notify)} notify={notify}/>
-                {selectionMode&&<div className="selection-toolbar"><span>Выбрано: {selectedMessages.length} / 100</span><button className="text-button" disabled={!selectedMessages.length} onClick={()=>{setForwardSources(messages.filter(m=>selectedMessages.includes(m.id)&&m.type!=="deleted"));setTarget(null);setModal("forward");}}>Переслать</button><button className="text-button" onClick={()=>{setSelectionMode(false);setSelectedMessages([]);}}>Отмена</button></div>}
+                {!selectionMode&&<PinnedMessages key={selected} chatId={selected} socket={socket} connectionKey={`${me.firstName}/${me.lastName}`} changed={pinsRevision} onChanged={(id,pinned)=>setMessages(items=>items.map(m=>m.id===id?{...m,pinned}:m))} jump={id=>void loadAround(selected,id).catch(notify)} notify={notify}/>}
                 {!online && (
                   <div className="connection-strip">
                     Нет связи · отправка повторится после подключения
                   </div>
                 )}
-                {historical && <button className="history-return text-button" onClick={()=>{historyVersion.current++;historicalRef.current=false;setHistorical(false);messagesRef.current=[];setMessages([]);void refreshHistory(selected).catch(notify);}}>К новым сообщениям</button>}
+                {historical && <Button className="history-return text-button" onClick={()=>{historyVersion.current++;historicalRef.current=false;setHistorical(false);messagesRef.current=[];setMessages([]);void refreshHistory(selected).catch(notify);}}>К новым сообщениям</Button>}
                 <div className="feed" ref={feed} onWheelCapture={()=>{interactedWithHistory.current=true;}} onTouchStartCapture={()=>{interactedWithHistory.current=true;}} onPointerDownCapture={()=>{interactedWithHistory.current=true;}} onKeyDownCapture={()=>{interactedWithHistory.current=true;}}>
                   <div className="feed-inner">
                     {hasMore && (
-                      <button
+                      <Button
                         className="text-button"
                         disabled={historyBusy||!networkAvailable}
                         onClick={() =>
@@ -1229,107 +1412,11 @@ export function Beacon(): ReactNode {
                         }
                       >
                         {historyBusy ? "Загружаем…" : "Предыдущие сообщения"}
-                      </button>
+                      </Button>
                     )}
                     {!online&&!messages.length&&<p className="offline-history-note">Переписка ещё не загружена на это устройство. Подключитесь к интернету.</p>}
                     {offlineWindow?.hasMoreUnread&&<p className="offline-history-note">Часть непрочитанных сообщений не сохранена на устройстве. Доступны последние 1000; полная история — с интернетом.</p>}
-                    {messages.filter(message=>message.type!=="deleted").map((m, i, visibleMessages) => {
-                      const previous=visibleMessages[i-1];
-                      const continued=!!previous&&previous.authorId===m.authorId&&new Date(previous.createdAt).toDateString()===new Date(m.createdAt).toDateString()&&!(offlineWindow?.hasMoreUnread&&m.id===offlineWindow.unreadStartId);
-                      return (
-                      <div key={m.id} id={`message-${m.id}`}>
-                        <>
-                          {offlineWindow?.hasMoreUnread&&m.id===offlineWindow.unreadStartId&&<div className="offline-history-note">Часть истории между этими сообщениями ещё не загружена.{networkAvailable&&<button className="text-button" type="button" onClick={()=>void loadAround(selected,m.id).catch(notify)}>Загрузить пропущенную историю</button>}</div>}
-                          {(i === 0 ||
-                            new Date(
-                              visibleMessages[i - 1].createdAt,
-                            ).toDateString() !==
-                              new Date(m.createdAt).toDateString()) && (
-                            <div className="date-divider">
-                              <span>
-                                {new Date(m.createdAt).toLocaleDateString("ru")}
-                              </span>
-                            </div>
-                          )}
-                        </>
-                        <MessageActions
-                          id={m.id} enabled={m.type!=="deleted"&&!selectionMode} pinned={!!m.pinned}
-                          className={`message-group ${continued?"continued-message":""} ${m.authorId === me.id ? "outgoing" : ""} ${selectedMessages.includes(m.id)?"selected-message":""} ${selectionMode?"selectable-message":""}`}
-                          reply={()=>chooseContext("reply",m)}
-                          edit={m.authorId===me.id&&["text","photo"].includes(m.type)?()=>chooseContext("edit",m):undefined}
-                          forward={()=>{setForwardSources([m]);setTarget(null);setModal("forward");}}
-                          read={m.authorId===me.id&&current.kind!=="saved"?()=>setReadDetails(m):undefined}
-                          pin={()=>void togglePin(m)} select={()=>{setSelectionMode(true);toggleSelected(m.id);}}
-                          remove={m.authorId===me.id?()=>setDeleting(m):undefined}
-                          reaction={()=>{setTarget(m);setModal("reaction");}} quickReaction={emoji=>void reaction(emoji,m)}
-                        >
-                          {selectionMode&&m.type!=="deleted"&&<input type="checkbox" className="message-selection" aria-label={`Выбрать сообщение ${m.authorName}: ${(m.content.text||m.content.name||"Вложение").slice(0,60)}`} checked={selectedMessages.includes(m.id)} disabled={!selectedMessages.includes(m.id)&&selectedMessages.length>=100} onChange={()=>toggleSelected(m.id)}/>}
-                          <div className="message-avatar">
-                            {!continued&&<Avatar name={m.authorId===me.id?me.name:m.authorName}
-                              image={m.authorId===me.id?me.image:users.find(u=>u.id===m.authorId)?.image??m.authorImage} extra="green"/>}
-                          </div>
-                          <div className="group-body">
-                            <div className="message-heading">
-                              {!continued&&<div className="author">{m.authorId===me.id?me.name:users.find(u=>u.id===m.authorId)?.name??m.authorName}</div>}
-                              <div className="message-meta">
-                                {current.kind!=="saved"&&m.type!=="deleted"&&m.authorId===me.id&&<DeliveryStatus receipts={receipts} message={m} open={()=>setReadDetails(m)}/>}
-                                <time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleTimeString("ru",{hour:"2-digit",minute:"2-digit"})}</time>
-                              </div>
-                            </div>
-                            <div className="bubble-row">
-                              <div className={`bubble ${["text","photo","sticker"].includes(m.type)?"flat-message":""} ${m.type === "sticker" ? "sticker-bubble" : ""}`}>
-                                {m.forwardedFrom && (
-                                  <div className="forwarded">
-                                    Переслано · {m.forwardedFrom.authorName}
-                                  </div>
-                                )}
-                                {m.reply && (
-                                  <button
-                                    className="message-quote"
-                                    onClick={() => void jump(m)}
-                                  >
-                                    {m.reply.authorName}: {m.reply.text}
-                                  </button>
-                                )}
-                                <span className="bubble-text">
-                                  {renderMessage(m.type, m.content, me.id, id=>{if(id!==me.id)void startDirectChat(id);}, index=>setPhotoView({chatId:m.chatId,messageId:m.id,index}))}
-                                </span>
-                                {current.kind==="direct"&&<span className="mobile-inline-meta">
-                                  <time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleTimeString("ru",{hour:"2-digit",minute:"2-digit"})}</time>
-                                  {m.authorId===me.id&&<DeliveryStatus receipts={receipts} message={m} open={()=>setReadDetails(m)}/>}
-                                </span>}
-                                {m.editedAt && <span className="message-edited" title={new Date(m.editedAt).toLocaleString("ru")}>Изменено</span>}
-
-                              </div>
-                            </div>
-                            {m.type!=="deleted"&&!selectionMode&&!!m.reactions.length&&<div className="message-tools">
-                              {[
-                                ...new Set(m.reactions.map((r) => r.emoji)),
-                              ].map((emoji) => (
-                                <button
-                                  key={emoji}
-                                  className={`reaction-pill ${m.reactions.some((r) => r.emoji === emoji && r.userId === me.id) ? "mine" : ""}`}
-                                  title={m.reactions
-                                    .filter((r) => r.emoji === emoji)
-                                    .map((r) => r.name)
-                                    .join(", ")}
-                                  onClick={() => {
-                                    setTarget(m);
-                                    setModal("reaction");
-                                  }}
-                                >
-                                  {emoji}{" "}
-                                  {
-                                    m.reactions.filter((r) => r.emoji === emoji)
-                                      .length
-                                  }
-                                </button>
-                              ))}
-                            </div>}
-                          </div>
-                        </MessageActions>
-                      </div>
-                    );})}
+                    {historyMarkup}
                     {pending
                       .filter(
                         (p) =>
@@ -1360,7 +1447,7 @@ export function Beacon(): ReactNode {
                                   ? "Отправляется…"
                                   : "В очереди"}
                               {p.failed && (
-                                <button
+                                <Button
                                   onClick={() => {
                                     setPending((ps) =>
                                       ps.map((x) =>
@@ -1374,7 +1461,7 @@ export function Beacon(): ReactNode {
                                   }}
                                 >
                                   Повторить
-                                </button>
+                                </Button>
                               )}
                             </div>
                           </div>
@@ -1382,16 +1469,21 @@ export function Beacon(): ReactNode {
                       ))}
                   </div>
                 </div>
-                <ComposerFrame state={composerState} textarea={textarea} device={device} context={context}>
+                {selectionMode?<div ref={observeComposerSize} className="composer-dock selection-dock"><div className="selection-actions" role="toolbar" aria-label="Действия с выбранными сообщениями">
+                  <Button disabled={chosenMessages.length!==1} onClick={()=>{const message=chosenMessages[0];cancelSelection();chooseContext("reply",message);requestAnimationFrame(()=>textarea.current?.focus());}}><Reply/><span>Ответить</span></Button>
+                  <Button disabled={!chosenMessages.length} onClick={()=>{setForwardSources(chosenMessages);setTarget(null);setModal("forward");}}><Forward/><span>Переслать</span></Button>
+                  <Button disabled={!copyText} onClick={()=>{if(!navigator.clipboard){notify(new Error("Копирование недоступно в этом браузере"));return;}void navigator.clipboard.writeText(copyText).then(cancelSelection).catch(notify);}}><Copy/><span>Скопировать</span></Button>
+                  <Button className="danger" disabled={!chosenMessages.length||chosenMessages.some(message=>message.authorId!==me.id)} onClick={()=>setBatchDeleting(chosenMessages)}><Trash2/><span>Удалить</span></Button>
+                </div></div>:<ComposerFrame state={composerState} textarea={textarea} device={device} context={context}>
                   {(draft, mentionCursor) => (
                 <div
-                  ref={node=>{if(!node)return;const workspace=node.closest<HTMLElement>(".workspace");const observer=new ResizeObserver(()=>workspace?.style.setProperty("--composer-height",`${node.getBoundingClientRect().height}px`));observer.observe(node);return ()=>observer.disconnect();}}
+                  ref={observeComposerSize}
                   className="composer-dock"
                   data-composer-state={context?.kind ?? "input"}
                 >
                   <MentionSuggestions draft={draft} cursor={mentionCursor} members={chatMembers} choose={chooseMention}/>
                   {context?.kind !== "edit" && !busy && !photos.length && <StickerSuggestions userId={me.id} text={stickerSuggestionQuery(draft)} choose={sticker => queueSticker(sticker, true)} />}
-                  <form className="composer-open" onSubmit={submitMessage}>
+                  <Form className="composer-open" onSubmit={submitMessage}>
                     {context && (
                       <div className="composer-context">
                         <div className="composer-context-title">
@@ -1402,17 +1494,17 @@ export function Beacon(): ReactNode {
                         <div className="composer-context-text">
                           {context.message.content.text || (context.message.type === "photo" ? "Фото" : "")}
                         </div>
-                        <button
+                        <Button
                           className="composer-context-close"
                           type="button"
                           onClick={cancelContext}
                           aria-label="Отменить контекст сообщения"
                         >
                           ×
-                        </button>
+                        </Button>
                       </div>
                     )}
-                    {!!photos.length && <div className="photo-previews">{photos.map((photo, index) => <div className="photo-preview" key={index}><PhotoThumbnail file={photo} index={index} /><button type="button" aria-label={`Убрать фото ${index + 1}`} disabled={busy} onClick={() => { photoMessageId.current = v7(); setPhotos(items => items.filter((_, i) => i !== index)); }}>Убрать</button></div>)}</div>}
+                    {!!photos.length && <div className="photo-previews">{photos.map((photo, index) => <div className="photo-preview" key={index}><PhotoThumbnail file={photo} index={index} /><Button className="photo-preview-remove" type="button" aria-label={`Убрать фото ${index + 1}`} disabled={busy} onClick={() => { photoMessageId.current = v7(); setPhotos(items => items.filter((_, i) => i !== index)); }}><X size={16}/></Button></div>)}</div>}
                     <div className="composer-line-layout" data-has-content={!!draft.trim() || !!photos.length || context?.kind === "edit"}>
                     <div className="composer-body">
                       <label className="sr-only" htmlFor="composer">
@@ -1423,7 +1515,7 @@ export function Beacon(): ReactNode {
                         disabled={busy && !!photos.length}
                         id="composer"
                         className="composer-input"
-                        rows={device === "mobile" ? 1 : 2}
+                        rows={1}
                         placeholder="Сообщение"
                         value={draft}
                         maxLength={10000}
@@ -1444,14 +1536,13 @@ export function Beacon(): ReactNode {
                       />
                     </div>
                     <div className="composer-actions live">
-                      {device === "mobile" && <details className="composer-attach-menu" key={selected} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.open = false; }} onKeyDown={e => { if (e.key === "Escape") { e.currentTarget.open = false; e.currentTarget.querySelector("summary")?.focus(); } }}>
-                        <summary className="composer-action" aria-label="Прикрепить" data-tooltip="Прикрепить"><Icon name="file" /></summary>
+                      {<ActionPanel key={selected} label="Прикрепить" icon={<Icon name="file"/>} className="mobile-attach-actions" triggerClassName="composer-action composer-attach-menu" placement="top start">
                         <div className="composer-attach-options">
-                          <button type="button" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={e => { e.currentTarget.closest("details")?.removeAttribute("open"); attachmentInput.current?.click(); }}><Icon name="file" />Файл или видео</button>
-                          <button type="button" disabled={busy || context?.kind === "edit"} onClick={e => { e.currentTarget.closest("details")?.removeAttribute("open"); photoInput.current?.click(); }}><Icon name="photo" />Фото</button>
-                          <button type="button" disabled={busy || context?.kind === "edit"} onClick={e => { e.currentTarget.closest("details")?.removeAttribute("open"); setStickersOpen(true); }}><Icon name="sticker" />Стикер</button>
+                          <Button type="button" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={e => { attachmentInput.current?.click(); }}><Icon name="file" />Файл или видео</Button>
+                          <Button type="button" disabled={busy || context?.kind === "edit"} onClick={e => { photoInput.current?.click(); }}><Icon name="photo" />Фото</Button>
+                          <Button type="button" disabled={busy || context?.kind === "edit"} onClick={e => { setStickersOpen(true); }}><Icon name="sticker" />Стикер</Button>
                         </div>
-                      </details>}
+                      </ActionPanel>}
 
                       <input type="file" aria-label="Выбрать файл или видео" ref={attachmentInput} hidden onChange={e=>{
                         const file=e.target.files?.[0];e.target.value="";if(!file||!selected)return;
@@ -1459,10 +1550,10 @@ export function Beacon(): ReactNode {
                         if(!file.size||file.size>attachmentLimits[kind]){notify(new Error(`Допустимый размер: ${kind==="video"?"500":"100"} МБ`));return;}
                         setAttachment({file,kind,chatId:selected});
                       }}/>
-                      <button type="button" className="composer-action composer-desktop-extra" aria-label="Прикрепить файл или видео" data-tooltip="Отправить файл или видео" disabled={busy||context?.kind==="edit"||!!photos.length} onClick={()=>attachmentInput.current?.click()}><Icon name="file"/></button>
-                      {(device !== "mobile" || (!draft.trim() && !photos.length && context?.kind !== "edit")) && <button type="button" className="composer-action composer-mic" aria-label="Записать голосовое сообщение" data-tooltip="Отправить голосовое сообщение" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("audio")}><Icon name="mic" /></button>}
-                      <button type="button" className="composer-action composer-video" aria-label="Записать видеокружок" data-tooltip="Отправить видеокружок" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("circle")}><Icon name="video" /></button>
-                      <button type="button" className="composer-action composer-desktop-extra" aria-label="Выбрать стикер" data-tooltip="Отправить стикер" disabled={busy || context?.kind === "edit"} onClick={() => setStickersOpen(true)}><Icon name="sticker" /></button>
+                      <Button type="button" className="composer-action composer-desktop-extra" aria-label="Прикрепить файл или видео" data-tooltip="Отправить файл или видео" disabled={busy||context?.kind==="edit"||!!photos.length} onClick={()=>attachmentInput.current?.click()}><Icon name="file"/></Button>
+                      {(!draft.trim() && !photos.length && context?.kind !== "edit") && <Button type="button" className="composer-action composer-mic" aria-label="Записать голосовое сообщение" data-tooltip="Отправить голосовое сообщение" disabled={busy} onClick={() => setRecordingKind("audio")}><Icon name="mic" /></Button>}
+                      <Button type="button" className="composer-action composer-video" aria-label="Записать видеокружок" data-tooltip="Отправить видеокружок" disabled={busy || context?.kind === "edit" || !!photos.length} onClick={() => setRecordingKind("circle")}><Icon name="video" /></Button>
+                      <Button type="button" className="composer-action composer-desktop-extra" aria-label="Выбрать стикер" data-tooltip="Отправить стикер" disabled={busy || context?.kind === "edit"} onClick={() => setStickersOpen(true)}><Icon name="sticker" /></Button>
                       <input ref={photoInput} type="file" multiple className="sr-only" aria-label="Выбрать фото" accept="image/jpeg,image/png,image/webp" disabled={busy || context?.kind === "edit"} onChange={e => {
                         const files = Array.from(e.target.files ?? []); e.target.value = "";
                         if (!files.length) return;
@@ -1470,8 +1561,8 @@ export function Beacon(): ReactNode {
                         if (files.some(file => !file.size || file.size > 5 * 1024 * 1024 || !["image/jpeg", "image/png", "image/webp"].includes(file.type))) { notify(new Error("Выберите PNG, JPEG или WebP до 5 МБ каждый")); return; }
                         photoMessageId.current = v7(); setPhotos(items => [...items, ...files]);
                       }} />
-                      <button type="button" className="composer-action composer-desktop-extra" aria-label="Прикрепить фото" data-tooltip="Отправить фото" disabled={busy || context?.kind === "edit"} onClick={() => photoInput.current?.click()}><Icon name="photo" /></button>
-                      <button
+                      <Button type="button" className="composer-action composer-desktop-extra" aria-label="Прикрепить фото" data-tooltip="Отправить фото" disabled={busy || context?.kind === "edit"} onClick={() => photoInput.current?.click()}><Icon name="photo" /></Button>
+                      <Button
                         className="composer-action composer-emoji"
                         type="button"
                         aria-label="Добавить эмодзи" data-tooltip="Добавить эмодзи"
@@ -1488,8 +1579,8 @@ export function Beacon(): ReactNode {
                           <circle cx="12" cy="12" r="8.5" />
                           <path d="M8.8 10h.1M15.1 10h.1M8.8 14c1.8 1.7 4.6 1.7 6.4 0" />
                         </svg>
-                      </button>
-                      {(device !== "mobile" || !!draft.trim() || !!photos.length || context?.kind === "edit") && <button
+                      </Button>
+                      {(!!draft.trim() || !!photos.length || context?.kind === "edit") && <Button
                         className="composer-action send-button"
                         data-tooltip={context?.kind==="edit"?"Сохранить изменения":"Отправить сообщение"}
                         disabled={(!draft.trim() && !photos.length) || busy || queueReady!==me.id}
@@ -1500,13 +1591,13 @@ export function Beacon(): ReactNode {
                         }
                       >
                         <Icon name="send" />
-                      </button>}
+                      </Button>}
                     </div>
                     </div>
-                  </form>
+                  </Form>
                 </div>
                   )}
-                </ComposerFrame>
+                </ComposerFrame>}
               </>
             ) : (
               <div className="empty-state">
@@ -1527,35 +1618,36 @@ export function Beacon(): ReactNode {
           {nav}
           {(section === "profile" || (section === "admin" && me.role === "admin")) && <aside className={`admin-sections ${section === "profile" ? "settings-sections" : ""}`}>
             <header className="admin-sections-heading">
-              <button type="button" className="icon-button admin-mobile-back" aria-label="Назад к чатам" onClick={() => {setSearchOpen(false);setSection("chats");}}><Icon name="back" /></button>
+              <Button type="button" className="icon-button admin-mobile-back" aria-label="Назад в Ещё" onClick={() => setSection("more")}><Icon name="back" /></Button>
               <h1>{sectionTitle}</h1>
             </header>
             <nav aria-label={section==="profile"?"Разделы настроек":"Разделы администрирования"}>
-              {sectionItems.map(item => <button type="button" key={item.path}
+              {sectionItems.map(item => <Button type="button" key={item.path}
                 className={`admin-section-row ${activeSectionPage.path === item.path ? "active" : ""}`}
                 aria-current={activeSectionPage.path === item.path ? "page" : undefined}
                 onClick={() => void navigate({ to: item.path, search: {} })}>
                 <Icon name={item.icon} /><span>{item.title}</span>
-              </button>)}
+              </Button>)}
             </nav>
           </aside>}
           <main className="settings">
             <header className="admin-header">
-              <button type="button" className="icon-button admin-mobile-back"
+              <Button type="button" className="icon-button admin-mobile-back"
                 onClick={() => setSection(section === "profile" ? "profile" : "admin")}
-                aria-label="Назад к разделам"><Icon name="back" /></button>
+                aria-label="Назад к разделам"><Icon name="back" /></Button>
               <div className="admin-title"><h1>{activeSectionPage.title}</h1></div>
             </header>
             <div className="settings-main">
               {section === "profile" ? settingsPage.path === "/settings/security" ? <Security email={me.email} notify={notify}/>
                 : settingsPage.path === "/settings/notifications" ? <PushSettings notify={notify}/>
                 : settingsPage.path === "/settings/stickers" ? <StickerAdmin key="mine" scope="mine" notify={notify}/>
+                : settingsPage.path === "/settings/folders" ? <FolderSettings folders={chatFolders.folders} chats={chats} refresh={chatFolders.refresh} notify={notify}/>
                 : settingsPage.path === "/settings/data" ? <DeviceData notify={notify}/>
                 : settingsPage.path === "/settings/about" ? <About/>
                 : (
                 <>
                   <Profile me={me} refresh={refreshMe} notify={notify} />
-                  <button
+                  <Button
                     className="secondary-button"
                     onClick={async () => {
                       await forgetPushDevice().catch(()=>{});
@@ -1574,7 +1666,7 @@ export function Beacon(): ReactNode {
                     }}
                   >
                     Выйти из аккаунта
-                  </button>
+                  </Button>
                 </>
               ) : me.role !== "admin" ? <p>Этот раздел доступен только администраторам.</p>
               : adminPage.path === "/admin/storage" ? <StorageAdmin />
@@ -1583,7 +1675,7 @@ export function Beacon(): ReactNode {
                 <div className="settings-card">
                   <div className="panel-heading">
                     <strong>Группы пользователей</strong>
-                    <button
+                    <Button
                       className="primary-button"
                       onClick={async () => {
                         try {
@@ -1597,21 +1689,21 @@ export function Beacon(): ReactNode {
                       }}
                     >
                       Управление
-                    </button>
+                    </Button>
                   </div>
                   <div className="admin-group-list">
-                    {systemGroups.map(group=><button type="button" className="admin-group-item" key={group.role} onClick={()=>{setSystemRole(group.role);setEditGroup(null);setModal("membership");}}>
+                    {systemGroups.map(group=><Button type="button" className="admin-group-item" key={group.role} onClick={()=>{setSystemRole(group.role);setEditGroup(null);setModal("membership");}}>
                       <strong>{group.name}</strong><span className="field-note">Системная группа · Участников: {users.filter(user=>user.role===group.role).length}</span>
-                    </button>)}
-                    {groups.map(group=><button type="button" className="admin-group-item" key={group.id} onClick={()=>{setSystemRole(null);setEditGroup(group);setModal("membership");}}>
+                    </Button>)}
+                    {groups.map(group=><Button type="button" className="admin-group-item" key={group.id} onClick={()=>{setSystemRole(null);setEditGroup(group);setModal("membership");}}>
                       <strong>{group.name}</strong><span className="field-note">Участников: {group.members.length}</span>
-                    </button>)}
+                    </Button>)}
                   </div>
                 </div>
               ) : adminPage.path === "/admin/chats" ? (
                 <div className="settings-card">
                   <h2>Все групповые чаты</h2>
-                  <button
+                  <Button
                     className="secondary-button"
                     onClick={async () => {
                       try {
@@ -1622,15 +1714,15 @@ export function Beacon(): ReactNode {
                     }}
                   >
                     Показать список
-                  </button>
+                  </Button>
                   {allGroups.map((c) => (
-                    <button
+                    <Button
                       key={c.id}
                       className="secondary-button"
                       onClick={() => void loadManagement(c.id)}
                     >
                       {c.title}
-                    </button>
+                    </Button>
                   ))}
                   <p className="field-note">
                     Управление не открывает переписку. Читать её могут только
@@ -1641,7 +1733,7 @@ export function Beacon(): ReactNode {
                 <div className="settings-card">
                   <div className="panel-heading">
                     <strong>Пользователи</strong>
-                    <button
+                    <Button
                       className="primary-button"
                       onClick={() => {
                         setEditUser(null);
@@ -1649,10 +1741,10 @@ export function Beacon(): ReactNode {
                       }}
                     >
                       Создать
-                    </button>
+                    </Button>
                   </div>
                   {users.map((u) => (
-                    <button
+                    <Button
                       className="user-row editable"
                       key={u.id}
                       onClick={() => {
@@ -1677,7 +1769,7 @@ export function Beacon(): ReactNode {
                       >
                         {u.banned ? "Заблокирован" : "Активен"}
                       </span>
-                    </button>
+                    </Button>
                   ))}
                 </div>
               )}
@@ -1688,7 +1780,8 @@ export function Beacon(): ReactNode {
       {attachmentsOpen&&selected&&current&&<ChatAttachments key={selected} chatId={selected} name={current.name} socket={socket} close={()=>setAttachmentsOpen(false)} photo={setPhotoView} jump={id=>void loadAround(selected,id).catch(notify)}/>}
       {readDetails&&<ReadDetails key={readDetails.id} messageId={readDetails.id} chatId={readDetails.chatId} socket={socket} close={()=>setReadDetails(null)}/>}
       {photoView&&<PhotoViewer key={`${photoView.chatId}:${photoView.messageId}`} target={photoView} socket={socket} close={()=>setPhotoView(null)}/>}
-      {deleting&&<Dialog title="Удалить сообщение?" close={()=>{if(!deleteBusy)setDeleting(null);}}><p>Сообщение будет удалено у всех участников переписки.</p><div className="inline-actions"><button type="button" className="primary-button" disabled={deleteBusy} onClick={()=>void removeMessage()}>{deleteBusy?"Удаляем…":"Удалить"}</button><button type="button" className="secondary-button" disabled={deleteBusy} onClick={()=>setDeleting(null)}>Отмена</button></div></Dialog>}
+      {batchDeleting&&<Dialog title="Удалить сообщения?" close={()=>{if(!deleteBusy)setBatchDeleting(null);}}><p>Выбранные сообщения ({batchDeleting.length}) будут удалены у всех участников переписки.</p><div className="inline-actions"><Button className="primary-button" disabled={deleteBusy} onClick={()=>void removeSelectedMessages()}>{deleteBusy?"Удаляем…":"Удалить"}</Button><Button className="secondary-button" disabled={deleteBusy} onClick={()=>setBatchDeleting(null)}>Отмена</Button></div></Dialog>}
+      {deleting&&<Dialog title="Удалить сообщение?" close={()=>{if(!deleteBusy)setDeleting(null);}}><p>Сообщение будет удалено у всех участников переписки.</p><div className="inline-actions"><Button type="button" className="primary-button" disabled={deleteBusy} onClick={()=>void removeMessage()}>{deleteBusy?"Удаляем…":"Удалить"}</Button><Button type="button" className="secondary-button" disabled={deleteBusy} onClick={()=>setDeleting(null)}>Отмена</Button></div></Dialog>}
       {emojiOpen&&selected&&section==="chats"&&<EmojiMenu userId={me.id} choose={chooseEmoji} close={()=>setEmojiOpen(false)}/>}
       {attachment&&<AttachmentUpload key={`${attachment.chatId}:${attachment.file.name}`} {...attachment} replyToId={context?.kind==="reply"?context.message.id:undefined} close={()=>setAttachment(null)} notify={notify} sent={async id=>{if(selectedRef.current===id){setContext(null);await refreshHistory(id);}await refreshLists();}}/>}
       {recordingKind && selected && <RecordingDialog key={`${selected}:${recordingKind}`} kind={recordingKind} activity={recording} chatId={selected} replyToId={context?.kind === "reply" ? context.message.id : undefined} notify={notify} close={() => setRecordingKind(null)} sent={async chatId => {
@@ -1704,6 +1797,7 @@ export function Beacon(): ReactNode {
       {modal === "new" && (
         <Dialog title="Новый чат" close={() => setModal(null)}>
           <NewChat
+            initialKind="group"
             users={users.filter((u) => !u.banned && u.id !== me.id)}
             done={async (id) => {
               openChat(id);
@@ -1717,9 +1811,9 @@ export function Beacon(): ReactNode {
         <Dialog title="Реакция на сообщение" close={() => setModal(null)}>
           <div className="emoji-picker">
             {["❤️", "👍", "👎", "😂", "😮", "😢", "🙏", "🔥"].map((e) => (
-              <button key={e} onClick={() => void reaction(e)} aria-label={e}>
+              <Button key={e} onClick={() => void reaction(e)} aria-label={e}>
                 {e}
-              </button>
+              </Button>
             ))}
           </div>
           {target.reactions.map((r) => (
@@ -1736,8 +1830,8 @@ export function Beacon(): ReactNode {
         <Dialog title={`Переслать сообщения · ${forwardSources.length}`} close={()=>setModal(null)}>
           <p>Выберите переписку</p>
           <div className="forward-destinations">
-            <button className="secondary-button" disabled={busy} onClick={()=>{setBusy(true);void ensureSaved().then(async chat=>{queueForwards(chat.id);await refreshLists();}).catch(notify).finally(()=>setBusy(false));}}><Icon name="bookmark"/>Избранное</button>
-            {chats.filter(c=>c.kind!=="saved").map(c=><button className="secondary-button" key={c.id} onClick={()=>queueForwards(c.id)}>{c.name}</button>)}
+            <Button className="secondary-button" disabled={busy} onClick={()=>{setBusy(true);void ensureSaved().then(async chat=>{queueForwards(chat.id);await refreshLists();}).catch(notify).finally(()=>setBusy(false));}}><Icon name="bookmark"/>Избранное</Button>
+            {chats.filter(c=>c.kind!=="saved").map(c=><Button className="secondary-button" key={c.id} onClick={()=>queueForwards(c.id)}>{c.name}</Button>)}
           </div>
         </Dialog>
       )}
@@ -1745,7 +1839,7 @@ export function Beacon(): ReactNode {
         <Dialog title="Участники и настройки" close={() => setModal(null)}>
           {(details.chat.owner_id === me.id || me.role === "admin") && (
             <>
-              <form
+              <Form
                 className="group-settings-form"
                 key={details.chat.id}
                 onSubmit={(e) => {
@@ -1765,8 +1859,8 @@ export function Beacon(): ReactNode {
                   />
                 </Field>
                 <Field label="Описание"><textarea name="description" defaultValue={details.chat.description??""} maxLength={2000}/></Field>
-                <button className="primary-button">Сохранить</button>
-              </form>
+                <Button className="primary-button">Сохранить</Button>
+              </Form>
               <AvatarPicker
                 chatId={details.chat.id}
                 done={async () => {
@@ -1812,26 +1906,26 @@ export function Beacon(): ReactNode {
               {(details.chat.owner_id === me.id || me.role === "admin") &&
                 u.id !== details.chat.owner_id && (
                   <>
-                    <button
+                    <Button
                       className="text-button"
                       onClick={() => void manage({ remove: u.id })}
                     >
                       Исключить
-                    </button>
+                    </Button>
                     {!u.banned && (
-                      <button
+                      <Button
                         className="text-button"
                         onClick={() => void manage({ ownerId: u.id })}
                       >
                         Передать управление
-                      </button>
+                      </Button>
                     )}
                   </>
                 )}
             </div>
           ))}
           {details.members.some((u) => u.id === me.id) && (
-            <button
+            <Button
               className="secondary-button"
               onClick={async () => {
                 try {
@@ -1845,7 +1939,7 @@ export function Beacon(): ReactNode {
               }}
             >
               Выйти из группы
-            </button>
+            </Button>
           )}
         </Dialog>
       )}
@@ -1870,19 +1964,19 @@ export function Beacon(): ReactNode {
       {modal === "membership" && (
         <Dialog title="Группы пользователей" close={() => setModal(null)}>
           <div className="inline-actions">
-            {systemGroups.map(group=><button type="button" className="secondary-button" key={group.role} aria-pressed={systemRole===group.role} onClick={()=>{setSystemRole(group.role);setEditGroup(null);}}>{group.name}</button>)}
+            {systemGroups.map(group=><Button type="button" className="secondary-button" key={group.role} aria-pressed={systemRole===group.role} onClick={()=>{setSystemRole(group.role);setEditGroup(null);}}>{group.name}</Button>)}
             {groups.map((g) => (
-              <button
+              <Button
                 className="secondary-button"
                 key={g.id}
                 onClick={() => {setSystemRole(null);setEditGroup(g);}}
               >
                 {g.name}
-              </button>
+              </Button>
             ))}
-            <button className="text-button" onClick={() => {setSystemRole(null);setEditGroup(null);}}>
+            <Button className="text-button" onClick={() => {setSystemRole(null);setEditGroup(null);}}>
               Новая группа
-            </button>
+            </Button>
           </div>
           {systemRole ? <section aria-label="Системная группа">
             <h2>{systemGroups.find(group=>group.role===systemRole)?.name}</h2>
@@ -1890,7 +1984,7 @@ export function Beacon(): ReactNode {
             <p>{systemGroups.find(group=>group.role===systemRole)?.description}</p>
             <p>Состав определяется ролью в карточке пользователя. Права системной группы заданы приложением.</p>
             <div className="people-options">{users.filter(user=>user.role===systemRole).map(user=><div key={user.id}>{user.name}{user.banned?" · Заблокирован":""}</div>)}</div>
-            <button type="button" className="secondary-button" onClick={()=>{setModal(null);void navigate({to:"/admin/users",search:{}});}}>Управление пользователями</button>
+            <Button type="button" className="secondary-button" onClick={()=>{setModal(null);void navigate({to:"/admin/users",search:{}});}}>Управление пользователями</Button>
           </section> : <MembershipForm
             key={editGroup?.id ?? "new"}
             group={editGroup}
@@ -1903,6 +1997,6 @@ export function Beacon(): ReactNode {
           />}
         </Dialog>
       )}
-    </div>
+    </div></MobileInteractions.Provider>
   );
 }

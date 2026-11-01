@@ -207,3 +207,16 @@ mounted-filesystem adapter preserves real file names and directory trees. Postgr
 stores its catalog identities, permissions, favorites and trash metadata separately. Tus handles
 resumable streaming uploads; pg-boss runs durable jobs on the same PostgreSQL instance.
 See [storage.md](storage.md) for lifecycle, deployment and verification details.
+
+## Chat list selection
+
+Batch chat actions validate every selected membership in one transaction. Pins,
+notification preferences and folders are personal. `delete-own` always filters by
+the authenticated author's ID, including for group owners and administrators;
+it keeps the chats, memberships and other authors' messages. Message identities
+remain as tombstones, and media cleanup respects live forwarded references.
+
+A bulk deletion increments the chat's `history_revision`. API history/snapshots
+carry that revision. Clients invalidate loaded and cached history on a revision
+change and reject delayed snapshots from an older revision. Cached revisions are
+monotonic so a delayed chat-list response cannot restore deleted payloads.

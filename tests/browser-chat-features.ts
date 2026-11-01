@@ -18,6 +18,7 @@ try{
  for(const width of [1440,390]){
   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:"block"});const page=await context.newPage();const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));
   const scopes:(string|null)[]=[];
+  let draft={text:"",mentions:[] as any[]},draftRevision=0;
   let messages=[makeMessage(messageId,"Сообщение для проверки")];let sent:any,readRequests=0,deliveryRequests=0,searches=0,aroundRequests=0;
   await context.route("**/socket.io/**",route=>route.abort());
   await context.route("**/api/**",async route=>{
@@ -25,6 +26,8 @@ try{
    if(path==="/api/v1/me")data=user;
    else if(path==="/api/v1/users")data=[user,peer];
    else if(path==="/api/v1/chats")data=[{id:chatId,name:"Тестовый чат",kind:"group",title:"Тестовый чат",ownerId:user.id,unread:0,lastMessageId:messageId}];
+   else if(path==="/api/v1/drafts")data=[{chatId,draft,revision:draftRevision}];
+   else if(path.endsWith("/draft")&&request.method()==="PATCH"){const body=request.postDataJSON();draft={text:body.text,mentions:body.mentions};data={chatId,draft,revision:++draftRevision};}
    else if(path.endsWith("/members"))data={members:[user,peer],chat:{id:chatId,kind:"group"}};
    else if(path.endsWith("/receipts"))data=[{userId:peer.id,name:peer.name,joinedAt:"2026-01-01T00:00:00.000000Z",deliveredAt:"2026-01-02T13:00:00.000000Z",readAt:"2026-01-02T13:00:00.000000Z"}];
    else if(path==="/api/v1/receipts/delivered")deliveryRequests++;
@@ -47,6 +50,9 @@ try{
   const input=page.getByRole("textbox",{name:"Сообщение",exact:true});await input.fill("Привет @Тест Д");
   await page.getByRole("option",{name:peer.name,exact:true}).click();
   await expect(input).toHaveValue(`Привет @${peer.name} `);
+  await input.press("Backspace");await page.getByRole("option",{name:peer.name,exact:true}).click();
+  await expect.poll(()=>draft.mentions[0]?.userId).toBe(peer.id);assert.equal(draft.mentions.length,1);
+  await page.reload();await expect(input).toHaveValue(`Привет @${peer.name} `);
   await page.getByRole("button",{name:"Отправить сообщение",exact:true}).click();
   await expect.poll(()=>sent?.mentions?.[0]?.userId).toBe(peer.id);assert.equal(sent.mentions[0].start,7);
   await expect(page.locator(".message-mention")).toHaveText(`@${peer.name}`);

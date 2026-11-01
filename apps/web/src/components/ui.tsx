@@ -1,3 +1,5 @@
+import { Button } from "./app-button";
+import { ModalOverlay, Modal, Dialog as AriaDialog } from "react-aria-components";
 import { cachedResponse, localAccount, localGeneration, acceptAccount, writeCache, reconcileChats, forgetAccount } from "../offline";
 import type { User, Chat } from "@beacon/shared";
 import { useState, useEffect, useRef, type ReactNode } from "react";
@@ -127,74 +129,15 @@ export function AvatarPicker({
     </Field>
   );
 }
-const dialogStack:symbol[]=[];
-export function Dialog({
-  title,
-  close,
-  children,
-  className="",
-}: {
-  className?:string;
-  title: string;
-  close: () => void;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const closeRef=useRef(close);closeRef.current=close;
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement;
-    const token=Symbol();dialogStack.push(token);
-    ref.current?.focus();
-    const key = (e: KeyboardEvent) => {
-      if(dialogStack.at(-1)!==token)return;
-      if (e.key === "Escape") {e.preventDefault();e.stopImmediatePropagation();closeRef.current();}
-      if (e.key === "Tab") {
-        const nodes = ref.current?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled),a[href],input,select,textarea,video[controls],audio[controls],[tabindex="0"]',
-        );
-        if (!nodes?.length) return;
-        const first = nodes[0],
-          last = nodes[nodes.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    document.addEventListener("keydown", key);
-    return () => {
-      document.removeEventListener("keydown", key);
-      const top=dialogStack.at(-1)===token;
-      const index=dialogStack.indexOf(token);if(index>=0)dialogStack.splice(index,1);
-      if(top&&previous?.isConnected)previous.focus();
-    };
-  }, []);
-  return (
-    <div
-      className={`dialog-backdrop ${className?`${className}-backdrop`:""}`}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) close();
-      }}
-    >
-      <div
-        className={`dialog ${className}`}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        tabIndex={-1}
-        ref={ref}
-      >
-        <div className="panel-heading">
-          <strong>{title}</strong>
-          <button className="icon-button" onClick={close} aria-label="Закрыть">
-            ×
-          </button>
-        </div>
-        <div className="dialog-body">{children}</div>
-      </div>
-    </div>
-  );
+export function Dialog({title,close,children,className=""}:{title:string;close:()=>void;children:ReactNode;className?:string}) {
+  return <ModalOverlay isOpen isDismissable onOpenChange={open=>{if(!open)close();}} className={`dialog-backdrop ${className?`${className}-backdrop`:""}`}>
+    <Modal className={`dialog ${className}`}><AriaDialog aria-label={title} className="app-dialog-content">
+      <div className="panel-heading"><strong>{title}</strong><Button className="icon-button" onClick={close} aria-label="Закрыть">×</Button></div>
+      <div className="dialog-body">{children}</div>
+    </AriaDialog></Modal>
+  </ModalOverlay>;
+}
+
+export function OverlayDialog({title,close,children,className,backdropClassName="dialog-backdrop"}:{title:string;close:()=>void;children:ReactNode;className:string;backdropClassName?:string}) {
+ return <ModalOverlay isOpen isDismissable onOpenChange={open=>{if(!open)close();}} className={backdropClassName}><Modal className={className}><AriaDialog aria-label={title} className="app-dialog-content">{children}</AriaDialog></Modal></ModalOverlay>;
 }

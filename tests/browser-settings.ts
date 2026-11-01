@@ -11,6 +11,8 @@ const base=`http://127.0.0.1:${address.port}`;
 const browser=await chromium.launch({executablePath:"/usr/bin/chromium",args:["--no-sandbox"]});
 try{
  for(const role of ["user","admin"])for(const width of [1440,390,320]){
+  if(process.env.NAV_TEST_ROLE&&role!==process.env.NAV_TEST_ROLE)continue;
+  if(process.env.NAV_TEST_WIDTHS&&!process.env.NAV_TEST_WIDTHS.split(",").map(Number).includes(width))continue;
   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:"block"}),page=await context.newPage(),errors:string[]=[];
   const me={id:"019a0000-0000-7000-8000-000000000001",name:"Тестовый пользователь",firstName:"Тестовый",lastName:"Пользователь",email:"user@example.com",banned:false,role};
   page.on("pageerror",error=>errors.push(error.message));
@@ -72,17 +74,17 @@ try{
   if(width<=780)await page.getByRole("navigation",{name:"Навигация",exact:true}).getByRole("button",{name:"Чаты",exact:true}).click();
   else await page.locator(".nav-rail").getByRole("button",{name:"Чаты",exact:true}).click();
   }else{
-   await expect(navigation.getByRole("button",{name:"Материалы",exact:true})).toHaveCount(0);
-   await expect(navigation.getByRole("button",{name:"Хранилище",exact:true})).toHaveCount(0);
+   await expect(navigation.getByRole("button",{name:"Материалы",exact:true})).toHaveCount(width<=780?1:0);
+   await expect(navigation.getByRole("button",{name:"Хранилище",exact:true})).toHaveCount(width<=780?1:0);
    for(const path of ["/storage","/materials"]){await page.goto(base+path);await expect(page).toHaveURL(base+"/");await expect(page.locator(".ss-main,.mv-main")).toHaveCount(0);}
   }
   if(role==="admin"){
-   await navigation.getByRole("button",{name:"Администрирование",exact:true}).click();
+   if(width<=780){await navigation.getByRole("button",{name:"Ещё",exact:true}).click();await page.locator(".more-links").getByRole("button",{name:"Администрирование",exact:true}).click();}else await navigation.getByRole("button",{name:"Администрирование",exact:true}).click();
    await page.getByRole("navigation",{name:"Разделы администрирования"}).getByRole("button",{name:"Хранилища",exact:true}).click();
    await expect(page).toHaveURL(`${base}/admin/storage`);await expect(page.getByRole("heading",{name:"Настройки хранилищ",exact:true})).toBeVisible();await expect(page.locator(".storage-admin")).toContainText("Общие хранилища не настроены");
-   if(width<=780){await page.getByRole("button",{name:"Назад к разделам",exact:true}).click();await page.getByRole("button",{name:"Назад к чатам",exact:true}).click();}
+   if(width<=780){await page.getByRole("button",{name:"Назад к разделам",exact:true}).click();await page.getByRole("button",{name:"Назад в Ещё",exact:true}).click();await navigation.getByRole("button",{name:"Чаты",exact:true}).click();}
   }
-  await navigation.getByRole("button",{name:"Настройки",exact:true}).click();await expect(page).toHaveURL(`${base}/settings`);
+  if(width<=780){await navigation.getByRole("button",{name:"Ещё",exact:true}).click();await page.locator(".more-links").getByRole("button",{name:"Настройки",exact:true}).click();}else await navigation.getByRole("button",{name:"Настройки",exact:true}).click();await expect(page).toHaveURL(`${base}/settings`);
   const sections=page.getByRole("navigation",{name:"Разделы настроек",exact:true});await expect(sections).toBeVisible();
   if(width>780){
    await expect(page.locator(".settings")).toBeVisible();
@@ -119,10 +121,10 @@ try{
   if(width<=780){await expect(sections).toBeHidden();await page.getByRole("button",{name:"Назад к разделам",exact:true}).click();await expect(sections).toBeVisible();await expect(page).toHaveURL(`${base}/settings`);await sections.getByRole("button",{name:"Профиль",exact:true}).click();}
   await page.reload();await expect(page.locator(".settings").getByRole("heading",{name:"Профиль",exact:true})).toBeVisible();
   await page.goto(`${base}/profile`);await expect(page).toHaveURL(`${base}/settings/profile`);await expect(page.locator(".settings")).toBeVisible();
-  if(width<=780){await page.getByRole("button",{name:"Назад к разделам",exact:true}).click();await page.getByRole("button",{name:"Назад к чатам",exact:true}).click();}else await page.locator(".nav-rail").getByRole("button",{name:"Чаты",exact:true}).click();
+  if(width<=780){await page.getByRole("button",{name:"Назад к разделам",exact:true}).click();await page.getByRole("button",{name:"Назад в Ещё",exact:true}).click();await navigation.getByRole("button",{name:"Чаты",exact:true}).click();}else await page.locator(".nav-rail").getByRole("button",{name:"Чаты",exact:true}).click();
   await expect(page.getByRole("heading",{name:"Чаты",exact:true})).toBeVisible();
   if(role==="admin"){
-   if(width<=780)await page.getByRole("navigation",{name:"Навигация",exact:true}).getByRole("button",{name:"Администрирование",exact:true}).click();
+   if(width<=780){await navigation.getByRole("button",{name:"Ещё",exact:true}).click();await page.locator(".more-links").getByRole("button",{name:"Администрирование",exact:true}).click();}
    else await page.locator(".nav-rail").getByRole("button",{name:"Администрирование",exact:true}).click();
    await expect(page.getByRole("navigation",{name:"Разделы администрирования",exact:true})).toBeVisible();
    await expect(page.getByLabel("Версия приложения",{exact:true})).toHaveCount(0);

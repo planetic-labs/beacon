@@ -1,4 +1,4 @@
-import { useLayoutEffect, useSyncExternalStore, type ReactNode, type RefObject } from "react";
+import { useLayoutEffect, useRef, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 
 // Only the composer subscribes: typing must not invalidate the conversation tree.
 export function createComposerState() {
@@ -18,14 +18,21 @@ export function ComposerFrame({ state, textarea, device, context, children }: {
   context: unknown;
   children: (text: string, cursor: number) => ReactNode;
 }) {
+  const metrics=useRef<{device:string;line:number;padding:number}|null>(null);
   const { text, cursor } = useSyncExternalStore(state.subscribe, state.getSnapshot);
   useLayoutEffect(() => {
     const input = textarea.current;
     if (!input) return;
+    if(!metrics.current||metrics.current.device!==device){
+      const style=getComputedStyle(input);
+      metrics.current={device,line:parseFloat(style.lineHeight)||20,padding:parseFloat(style.paddingTop)+parseFloat(style.paddingBottom)};
+    }
+    const {line,padding}=metrics.current;
+    const minimum=line+padding;
+    // A single-line edit does not require collapsing and re-expanding the textarea.
+    if(parseFloat(input.style.height)<=minimum+1&&input.scrollHeight<=minimum+1)return;
     input.style.height = "auto";
-    const style = getComputedStyle(input), line = parseFloat(style.lineHeight) || 20;
-    const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
-    input.style.height = Math.max(line * (device === "mobile" ? 1 : 2) + padding, Math.min(input.scrollHeight, line * (device === "mobile" ? 8 : 13) + padding)) + "px";
+    input.style.height = Math.max(line + padding, Math.min(input.scrollHeight, line * (device === "mobile" ? 8 : 13) + padding)) + "px";
     input.style.overflowY = input.scrollHeight > parseFloat(input.style.height) ? "auto" : "hidden";
   }, [text, device, context, textarea]);
   return children(text, cursor);

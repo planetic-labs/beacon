@@ -41,7 +41,8 @@ export async function writeCache(name: string, value: unknown, owner = account, 
       if(owner!==account)return;
       if(name.startsWith("history/")){
         const chats=(await deviceDB.cache.get(key(owner,"chats")))?.value as Chat[]|undefined;
-        if(!chats?.some(chat=>chat.id===name.slice("history/".length)))return;
+        const chat=chats?.find(chat=>chat.id===name.slice("history/".length));
+        if(!chat||Number((value as OfflineSnapshot)?.historyRevision??0)!==Number(chat.historyRevision??0))return;
         const epoch=(await deviceDB.cache.get(key(owner,"history-epoch")))?.value??0;
         if(historyEpoch!==undefined&&historyEpoch!==epoch)return;
       }
@@ -95,8 +96,13 @@ export async function reconcileChats(chats: Chat[], owner = account) {
   const allowed = new Set(chats.map(chat => chat.id));
   try {
     await deviceDB.transaction("rw", deviceDB.cache, deviceDB.drafts, deviceDB.outbox, deviceDB.reads, async () => {
+      const previous=(await deviceDB.cache.get(key(owner,"chats")))?.value as Chat[]|undefined;
+      chats=chats.map(chat=>({...chat,historyRevision:Math.max(chat.historyRevision??0,previous?.find(old=>old.id===chat.id)?.historyRevision??0)}));
       const rows = await deviceDB.cache.where("account").equals(owner).toArray();
-      for (const row of rows) if (row.key.startsWith(key(owner, "history/")) && !allowed.has(row.key.split("/").at(-1)!)) await deviceDB.cache.delete(row.key);
+      for (const row of rows) if(row.key.startsWith(key(owner,"history/"))){
+        const chat=chats.find(chat=>chat.id===row.key.split("/").at(-1));
+        if(!chat||Number((row.value as OfflineSnapshot)?.historyRevision??0)!==Number(chat.historyRevision??0))await deviceDB.cache.delete(row.key);
+      }
       for (const table of [deviceDB.drafts, deviceDB.outbox, deviceDB.reads]) {
         const rows = await table.where("account").equals(owner).toArray();
         for (const row of rows) if (!allowed.has(row.chatId)) await table.delete(row.key);
@@ -121,7 +127,7 @@ export async function cachedResponse(path: string): Promise<unknown> {
     const compare = (m: Message) => m.createdAt.localeCompare(at) || m.id.localeCompare(cursor);
     messages = rows.filter(m => query.has("afterId") ? compare(m) >= (query.get("inclusive") === "true" ? 0 : 1) : compare(m) < 0);
   }
-  return { messages, hasMore: false };
+  return {messages,hasMore:false,historyRevision:snapshot?.historyRevision??0};
 }
 export async function localDrafts(owner: string) {
   return deviceDB.drafts.where("account").equals(owner).toArray();
