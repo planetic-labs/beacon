@@ -21,6 +21,27 @@ const id = () =>
     .default(sql`uuidv7()`);
 const time = (name: string) =>
   timestamp(name, { withTimezone: true }).notNull().defaultNow();
+// Calls and participants are separate so group rooms can reuse the lifecycle later.
+export const call = pgTable("call", {
+  id: id(), chatId: uuid("chat_id").notNull().references(()=>chats.id),
+  callerId: uuid("caller_id").notNull().references(()=>user.id),
+  mode: text("mode").notNull(), status: text("status").notNull().default("ringing"),
+  createdAt: time("created_at"), acceptedAt: timestamp("accepted_at",{withTimezone:true}),
+  endedAt: timestamp("ended_at",{withTimezone:true}), reason: text("reason"),
+},t=>[index("call_chat_created_idx").on(t.chatId,t.createdAt),check("call_mode_check",sql`${t.mode} in ('audio','video')`),check("call_status_check",sql`${t.status} in ('ringing','active','ended')`)]);
+export const callParticipant = pgTable("call_participant", {
+  callId: uuid("call_id").notNull().references(()=>call.id),
+  userId: uuid("user_id").notNull().references(()=>user.id),
+  clientId: uuid("client_id"),
+  heartbeatAt: time("heartbeat_at"),
+},t=>[primaryKey({columns:[t.callId,t.userId]}),index("call_participant_user_idx").on(t.userId)]);
+export const callPushDelivery = pgTable('call_push_delivery',{
+ id:id(),callId:uuid('call_id').notNull().references(()=>call.id),
+ subscriptionId:uuid('subscription_id').notNull().references(()=>pushSubscriptions.id,{onDelete:'cascade'}),
+ kind:text('kind').notNull(),attempts:integer('attempts').notNull().default(0),
+ createdAt:time('created_at'),nextAttemptAt:time('next_attempt_at'),
+ leaseUntil:timestamp('lease_until',{withTimezone:true}),completedAt:timestamp('completed_at',{withTimezone:true}),outcome:text('outcome'),
+},t=>[uniqueIndex('call_push_unique_idx').on(t.callId,t.subscriptionId,t.kind),index('call_push_pending_idx').on(t.nextAttemptAt).where(sql`${t.completedAt} is null`),check('call_push_kind_check',sql`${t.kind} in ('invite','state')`)]);
 export const user = pgTable("user", {
   id: id(),
   name: text("name").notNull(),

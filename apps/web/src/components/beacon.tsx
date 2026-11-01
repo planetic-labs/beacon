@@ -1,3 +1,5 @@
+import {Calls,startPersonalCall} from "./calls";
+import { Phone, Video } from "lucide-react";
 import {SelectableChatRow} from "./chat-list-selection";
 import {ChatListActions,ChatSelectionBadge} from "./chat-list-actions";
 import {useTouchSwipe} from "./touch-swipe";
@@ -400,6 +402,7 @@ export function Beacon(): ReactNode {
     };
     const listener=(event:MessageEvent)=>{
       if(event.data?.type==="beacon:open-chat")void open(event.data.chatId);
+      if(event.data?.type==="beacon:calls-changed")window.dispatchEvent(new Event("beacon:calls-changed"));
     };
     navigator.serviceWorker?.addEventListener("message",listener);
     const routeChat = pathname.startsWith("/chats/") ? pathname.slice("/chats/".length) : legacyChat;
@@ -486,6 +489,7 @@ export function Beacon(): ReactNode {
       void refreshMe();
     });
     s.on("sync", sync);
+    s.on("calls.changed",()=>window.dispatchEvent(new Event("beacon:calls-changed")));
     s.on("profile.changed", ({ userId }: { userId: string }) => {
       void refreshLists().catch(notify);
       if (userId === meRef.current?.id) void refreshMe();
@@ -1254,6 +1258,7 @@ export function Beacon(): ReactNode {
   return (
     <MobileInteractions.Provider value={device==="mobile"}><div ref={appFrame} className="app" data-device={device}>
       {toast}
+      <Calls key={me.id} userId={me.id} notify={notify}/>
       {section === "home" ? <div className="home-shell">{nav}<Home name={me.firstName} chats={()=>setSection("chats")} saved={()=>void openSaved()} materials={()=>me.role==="admin"?setSection("materials"):setUpcomingService("Материалы")} storage={()=>me.role==="admin"?setSection("storage"):setUpcomingService("Хранилище")}/>{mobileNavigation}</div> : section === "more" ? <div className="more-shell">{nav}<main className="more-main">
         <h1>Ещё</h1>
         <Button className="more-profile" onClick={()=>void navigate({to:"/settings/profile",search:{}})}><Avatar name={me.name} image={me.image}/><span><strong>{me.name}</strong><small>Мой профиль</small></span><ChevronRight/></Button>
@@ -1384,7 +1389,9 @@ export function Beacon(): ReactNode {
                   </div>
                   </div>
                   {device==="desktop"&&<Button className="icon-button desktop-chat-search" aria-label="Поиск в чате" onClick={()=>beginSearch({id:selected,name:current.name})}><Icon name="search"/></Button>}
+                  {current.kind==='direct'&&device==='desktop'&&<><Button className="icon-button desktop-chat-search" aria-label="Аудиозвонок" onClick={()=>startPersonalCall(selected,'audio')}><Phone/></Button><Button className="icon-button desktop-chat-search" aria-label="Видеозвонок" onClick={()=>startPersonalCall(selected,'video')}><Video/></Button></>}
                   <ActionPanel label="Действия с чатом" icon={<Icon name="menu"/>} className="mobile-chat-actions" triggerClassName="mobile-chat-menu-trigger">
+                    {current.kind==='direct'&&device==='mobile'&&<><Button className="icon-button" aria-label="Аудиозвонок" onClick={()=>startPersonalCall(selected,'audio')}><Phone/></Button><Button className="icon-button" aria-label="Видеозвонок" onClick={()=>startPersonalCall(selected,'video')}><Video/></Button></>}
                     <Button className="icon-button" aria-label="Вложения чата" onClick={()=>setAttachmentsOpen(true)}><Icon name="file"/></Button>
                     <Button className="icon-button" aria-label={current.pinned?"Открепить чат":"Закрепить чат"} onClick={()=>void api(`chats/${selected}/pin`,"PATCH",{pinned:!current.pinned}).then(()=>refreshLists()).catch(notify)}><Icon name="pin"/></Button>
                     {device==="mobile"&&<Button className="icon-button" aria-label="Поиск в чате" onClick={()=>beginSearch({id:selected,name:current.name})}><Icon name="search"/></Button>}

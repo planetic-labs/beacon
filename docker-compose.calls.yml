@@ -1,0 +1,19 @@
+# Append this file to the deployment's complete COMPOSE_FILE set.
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.11
+    command: [--config, /etc/livekit.yaml]
+    restart: unless-stopped
+    volumes:
+      - ${LIVEKIT_CONFIG_FILE:?Set external LiveKit configuration}:/etc/livekit.yaml:ro
+    ports:
+      - "127.0.0.1:${CALL_API_PORT:?Set unique API port}:7880"
+      - "127.0.0.1:${CALL_TURN_PORT:?Set unique TURN proxy port}:443"
+      # WebRTC media is already encrypted and needs direct client connectivity.
+      - "${CALL_RTC_TCP_PORT:?Set unique media TCP port}:${CALL_RTC_TCP_PORT}/tcp"
+      - "${CALL_RTC_UDP_PORT:?Set unique media UDP port}:${CALL_RTC_UDP_PORT}/udp"
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

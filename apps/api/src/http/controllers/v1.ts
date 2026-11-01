@@ -1,3 +1,4 @@
+import {callState,startCall,callAction} from "@api/modules/calls/service";
 import {applyChatSelection} from "@api/modules/chat/selection";
 import {folderList,saveFolder,deleteFolder} from "@api/modules/chat/folders";
 import { draftList, saveDraft, pinChat } from "@api/modules/chat/preferences";
@@ -64,6 +65,13 @@ async function handler(
     }
     if (!u.firstName || !u.lastName)
       throw new HttpError(409, "Заполните имя и фамилию");
+    if(p[0]==='calls'){
+      const clientId=uuid.parse(request.headers.get('X-Beacon-Call-Client'));
+      if(p.length===1&&method==='GET')return ok(await callState(u,clientId));
+      if(p.length===1&&method==='POST'){const input=z.object({chatId:uuid,mode:z.enum(['audio','video'])}).parse(data);return ok(await startCall(u,input.chatId,input.mode,clientId));}
+      if(p.length===3&&method==='POST'&&['accept','decline','end','join','heartbeat'].includes(p[2]))return ok(await callAction(u,uuid.parse(p[1]),p[2],clientId));
+      throw new HttpError(404,'Не найдено');
+    }
     if(p[0]==="presence"&&p[1]==="leave"&&method==="POST"){
       const input=z.object({connectionId:uuid}).parse(data);await leavePresence(u.id,input.connectionId);return ok({ok:true});
     }

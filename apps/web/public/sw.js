@@ -4,7 +4,7 @@ const CACHE = SHELL ? 'beacon-shell-' + SHELL.version : 'beacon-shell-dev-v4';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clientVersions = new Map();
 const shellPaths = new Set(SHELL ? SHELL.urls : ['/offline.html', '/icon-192.png']);
-const isAppPage = path => ['/', '/index.html', '/profile', '/settings', '/settings/profile', '/settings/security', '/settings/notifications', '/settings/data', '/settings/about', '/settings/stickers', '/people', '/admin', '/admin/stickers', '/admin/users', '/admin/groups', '/admin/chats', '/consent'].includes(path)
+const isAppPage = path => ['/', '/home', '/more', '/settings/folders', '/index.html', '/profile', '/settings', '/settings/profile', '/settings/security', '/settings/notifications', '/settings/data', '/settings/about', '/settings/stickers', '/people', '/admin', '/admin/stickers', '/admin/users', '/admin/groups', '/admin/chats', '/consent'].includes(path)
   || (path.startsWith('/chats/') && uuid.test(path.slice(7)));
 async function cleanOldCaches() {
   const windows = await self.clients.matchAll({type:'window', includeUncontrolled:true});
@@ -75,6 +75,21 @@ self.addEventListener('push', event => {
   event.waitUntil((async () => {
     let data;
     try { data = event.data?.json(); } catch { return; }
+    if(data?.type==='call'){
+      if(!uuid.test(data.subscriptionId)||!uuid.test(data.callId)||!uuid.test(data.chatId)||!['invite','state'].includes(data.action))return;
+      const tag='beacon-call-'+data.callId;
+      const response=await fetch('/api/push/call?'+new URLSearchParams({subscriptionId:data.subscriptionId,callId:data.callId}),{credentials:'include',cache:'no-store'});
+      const call=response.ok?await response.json():null;
+      const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+      for(const client of windows)client.postMessage({type:'beacon:calls-changed'});
+      if(!call?.active||data.action==='state'){
+        for(const notification of await self.registration.getNotifications({tag}))notification.close();
+        return;
+      }
+      if(windows.some(client=>client.visibilityState==='visible'&&client.focused))return;
+      await self.registration.showNotification(call.title,{body:call.body,icon:'/icon-192.png',badge:'/icon-192.png',tag,renotify:false,requireInteraction:true,silent:false,vibrate:[200,100,200],actions:[{action:'open',title:'Открыть'}],data:{type:'call',chatId:call.chatId,callId:data.callId,subscriptionId:data.subscriptionId}});
+      return;
+    }
     if (data?.type !== 'message' || !uuid.test(data.subscriptionId) || !uuid.test(data.messageId) || !uuid.test(data.chatId)) return;
     // Recheck access after logout, blocking, removal from a chat or preference changes.
     const query = new URLSearchParams({subscriptionId:data.subscriptionId,messageId:data.messageId});
@@ -93,14 +108,21 @@ self.addEventListener('notificationclick', event => {
   const chatId = event.notification.data?.chatId;
   if (!uuid.test(chatId)) return;
   event.waitUntil((async () => {
+    if(event.notification.data?.type==='call'){
+      const {callId,subscriptionId}=event.notification.data;
+      if(!uuid.test(callId)||!uuid.test(subscriptionId))return;
+      const response=await fetch('/api/push/call?'+new URLSearchParams({callId,subscriptionId}),{credentials:'include',cache:'no-store'});
+      if(!response.ok||!(await response.json())?.active)return;
+    }
     const windows = await self.clients.matchAll({type:'window',includeUncontrolled:true});
     const client = windows.find(window => {
       const url = new URL(window.url);
-      return url.origin === self.location.origin && (['/', '/profile', '/settings', '/settings/profile', '/settings/security', '/settings/notifications', '/settings/data', '/settings/about', '/settings/stickers', '/people', '/admin', '/admin/stickers', '/admin/users', '/admin/groups', '/admin/chats'].includes(url.pathname) || url.pathname.startsWith('/chats/'));
+      return url.origin === self.location.origin && (['/', '/home', '/more', '/settings/folders', '/profile', '/settings', '/settings/profile', '/settings/security', '/settings/notifications', '/settings/data', '/settings/about', '/settings/stickers', '/people', '/admin', '/admin/stickers', '/admin/users', '/admin/groups', '/admin/chats'].includes(url.pathname) || url.pathname.startsWith('/chats/'));
     });
     if (client) {
       await client.focus();
       client.postMessage({type:'beacon:open-chat',chatId});
+      if(event.notification.data?.type==='call')client.postMessage({type:'beacon:calls-changed'});
     } else await self.clients.openWindow('/?chat=' + chatId);
   })());
 });

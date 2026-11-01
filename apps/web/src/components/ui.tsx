@@ -13,6 +13,7 @@ export async function api<T = any>(
   method = "GET",
   data?: unknown,
   networkOnly = false,
+  extraHeaders?: Record<string,string>,
 ): Promise<T> {
   const owner=localAccount(), generation=localGeneration();
   const controller = new AbortController();
@@ -21,7 +22,7 @@ export async function api<T = any>(
     const response = await fetch(`/api/v1/${path}`, {
       signal: controller.signal,
       method,
-      headers: data ? { "Content-Type": "application/json" } : undefined,
+      headers: { ...extraHeaders, ...(data ? { "Content-Type": "application/json" } : {}) },
       body: data ? JSON.stringify(data) : undefined,
       cache: "no-store",
     });

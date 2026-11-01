@@ -75,6 +75,8 @@ if [ "$mode" != full ]; then
   compose run --rm --no-deps web pnpm db:migrate
   compose run --rm --no-deps web pnpm exec tsx --test tests/integration.test.ts tests/email-normalization.test.ts
   compose run --rm --no-deps web pnpm exec tsx tests/storage-integration.ts
+  compose run --rm --no-deps web pnpm exec tsx tests/calls-integration.ts
+  compose run --rm --no-deps web pnpm exec tsx tests/call-push-integration.ts
   compose run --rm --no-deps web pnpm exec tsx tests/chat-selection-integration.ts
   compose run --rm --no-deps web pnpm exec tsx tests/mentions-integration.ts
   exit 0
@@ -85,6 +87,7 @@ docker build -f Dockerfile.test -t beacon-browser .
 docker run --rm beacon-browser pnpm exec tsx tests/browser-pwa.ts
 # Search, receipt and mention UI use synthetic users on desktop and mobile.
 docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-features.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-calls-ui.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-message-layout.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-swipes.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-list-selection.ts
@@ -141,3 +144,7 @@ docker run --rm --network host --env-file "$config" \
 # Message ownership and mention routing are checked after fixture browser scenarios.
 compose run --rm --no-deps web pnpm exec tsx tests/chat-selection-integration.ts
 compose run --rm --no-deps web pnpm exec tsx tests/mentions-integration.ts
+
+# Calls use an isolated fake LiveKit control API, never deployment credentials.
+compose run --rm --no-deps web pnpm exec tsx tests/calls-integration.ts
+compose run --rm --no-deps web pnpm exec tsx tests/call-push-integration.ts
