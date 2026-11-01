@@ -11,7 +11,11 @@ const folders=Array.from({length:8},(_,n)=>({id:id(100+n),name:n===0?"Личны
 const messages=Array.from({length:40},(_,n)=>({id:id(200+n),chatId:chats[0].id,authorId:n%2?me.id:peer.id,authorName:n%2?me.name:peer.name,type:"text",content:{text:`Сообщение ${n}`},createdAt:new Date(Date.UTC(2026,0,1,10,n)).toISOString(),reactions:[],...(n===39?{replyToId:id(238),reply:{id:id(238),text:"Цитата",authorName:peer.name}}:{})}));
 async function swipe(cdp:CDPSession,x:number,y:number,dx:number,dy=0,steps=10,cancel=false){
  await cdp.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x,y}]});
- for(let step=1;step<=steps;step++)await cdp.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:x+dx*step/steps,y:y+dy*step/steps}]});
+ // Sample real browser frames instead of delivering a whole gesture in one frame.
+ for(let step=1;step<=steps;step++){
+  await cdp.send("Runtime.evaluate",{expression:"new Promise(resolve=>requestAnimationFrame(resolve))",awaitPromise:true});
+  await cdp.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:x+dx*step/steps,y:y+dy*step/steps}]});
+ }
  await cdp.send("Input.dispatchTouchEvent",{type:cancel?"touchCancel":"touchEnd",touchPoints:[]});
 }
 const browser=await chromium.launch({executablePath:"/usr/bin/chromium",args:["--no-sandbox"]});
@@ -23,6 +27,8 @@ try{for(const width of [390,320]){
  });
  const cdp=await context.newCDPSession(page);await cdp.send("Emulation.setTouchEmulationEnabled",{enabled:true,maxTouchPoints:2});
  await page.goto(base);await expect(page.getByRole("tab")).toHaveCount(9);
+ await expect(page.locator(".app")).toHaveAttribute("data-device","mobile");
+ await expect(page.locator(".chat-row")).toHaveCount(chats.length);
  const active=()=>page.getByRole("tab",{selected:true});
  await swipe(cdp,width-65,260,-95);await expect(active()).toHaveText("Личные");await expect(page).toHaveURL(base+"/");await expect(page.locator(".chat-row")).toHaveCount(1);
  await swipe(cdp,80,260,95);await expect(active()).toHaveText("Все чаты");
@@ -43,9 +49,17 @@ try{for(const width of [390,320]){
  await swipe(cdp,x,y,-85);await expect(page.locator(".composer-context")).toContainText("Сообщение 39");await page.getByRole("button",{name:"Отменить контекст сообщения"}).click();
  await row.getByRole("button",{name:/Цитата/}).tap();await expect(page.locator(`#message-${id(238)}`)).toHaveClass(/highlight/);
  await row.scrollIntoViewIfNeeded();
+ // Closing the menu restores focus in a later animation frame. Do not start
+ // the next native touch while its overlay/focus cleanup is still pending.
+ await cdp.send("Emulation.setCPUThrottlingRate",{rate:4});
  await row.locator(".bubble-text").tap();await expect(page.getByRole("menu",{name:"Действия с сообщением",exact:true})).toBeVisible();await page.keyboard.press("Escape");
+ await expect(page.getByRole("menu",{name:"Действия с сообщением",exact:true})).toHaveCount(0);
+ await expect(page.locator(".message-menu-backdrop")).toHaveCount(0);
+ await expect(row).toBeFocused();
+ await row.scrollIntoViewIfNeeded();
  box=await row.locator(".bubble-text").boundingBox();assert.ok(box);
  await cdp.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x:box.x+box.width/2,y:box.y+box.height/2}]});await expect(page.locator(".selection-toolbar")).toContainText("Выбрано: 1");await cdp.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});
  await page.getByRole("button",{name:"Отменить выбор",exact:true}).click();
+ await cdp.send("Emulation.setCPUThrottlingRate",{rate:1});
  assert.deepEqual(errors,[]);await context.close();console.log(`PASS reply swipe, folder swipes, native scrolling, thresholds, edge/cancel, tap and long press ${width}px`);
 }}finally{await browser.close();await server.close();}
