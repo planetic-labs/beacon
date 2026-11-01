@@ -1,0 +1,1 @@
+ALTER TABLE "call_participant" ADD COLUMN "client_id" uuid;

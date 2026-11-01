@@ -1,4 +1,5 @@
 import webpush from "web-push";
+import {deliverCallPushBatch} from './calls';
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { db } from "../../db";
@@ -12,6 +13,7 @@ export type PushTransport = (subscription: webpush.PushSubscription, payload: st
 export async function deliverPushBatch(transport: PushTransport = webpush.sendNotification) {
   const config = pushConfiguration();
   if (!config) return;
+  await deliverCallPushBatch(transport);
   const batch = await rows(sql`update push_delivery d set lease_until=now()+interval '60 seconds',attempts=d.attempts+1
     from (select id from push_delivery where completed_at is null and next_attempt_at<=now()
       and (lease_until is null or lease_until<now()) order by next_attempt_at,id limit 10 for update skip locked) candidate

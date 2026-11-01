@@ -1,0 +1,15 @@
+.call-dialog { width:min(680px,calc(100vw - 24px)); }
+.call-peer { text-align:center; padding:12px; }
+.call-peer strong { font-size:20px; }
+.call-peer p,.call-state { color:var(--muted,#737d92); text-align:center; }
+.call-controls { display:flex; flex-wrap:wrap; justify-content:center; gap:12px; padding:18px 0 6px; }
+.call-controls button { display:flex; align-items:center; justify-content:center; gap:8px; border:0; padding:12px 16px; border-radius:24px; background:#eef1fb; color:#3457d5; min-height:46px; }
+.call-controls .call-accept { background:#238559; color:white; }
+.call-controls .call-end { background:#c53b4b; color:white; }
+.call-controls svg { width:21px; height:21px; }
+.call-media { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+.call-media video { width:calc(50% - 4px); min-width:120px; max-height:48dvh; background:#17243b; border-radius:18px; object-fit:contain; }
+.call-media audio { display:none; }
+/* Mirror only the self-view; published camera tracks stay unchanged. */
+.call-media video.call-local-preview { transform:scaleX(-1); }
+@media(max-width:780px){.call-dialog .dialog-body{padding:12px;}.call-media video{width:100%;max-height:27dvh;}}

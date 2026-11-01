@@ -1,3 +1,4 @@
+import { maintainCalls } from "../apps/api/src/modules/calls/service";
 import { v7 } from "uuid";
 import { presenceHeartbeat, releasePresence } from "../apps/api/src/modules/presence";
 import { cleanupMediaBatch } from "../apps/api/src/modules/media/cleanup";
@@ -99,6 +100,7 @@ async function listen() {
       else if (e.kind === "profile.changed")
         io.to(`user:${e.userId}`).emit("profile.changed", { userId: e.profileUserId });
       else if (e.kind === "chat.activity") io.to(`user:${e.userId}`).volatile.emit("chat.activity",e.activity);
+      else if(e.kind === "calls.changed")io.to(`user:${e.userId}`).emit("calls.changed");
       else if(e.kind === "folders.changed")io.to(`user:${e.userId}`).emit("folders.changed");
       else if(e.kind === "draft.changed")io.to(`user:${e.userId}`).emit("draft.changed",{chatId:e.chatId});
       else if (e.kind === "receipt.changed") io.to(`user:${e.userId}`).emit("receipt.changed",{chatId:e.chatId});
@@ -121,7 +123,7 @@ const dispatch = setInterval(async () => {
   try {
     await db.transaction(async (tx) => {
       const batch = await rows(
-        sql`select * from outbox where processed_at is null and kind<>'media.cleanup' order by created_at,id limit 50 for update skip locked`,
+        sql`select * from outbox where processed_at is null and kind not in ('media.cleanup','call.cleanup') order by created_at,id limit 50 for update skip locked`,
         tx,
       );
       for (const item of batch) {
@@ -145,6 +147,8 @@ const dispatch = setInterval(async () => {
   }
 }, 250);
 let cleaningMedia: Promise<void> | undefined;
+let maintainingCalls=false;
+const callTimer=setInterval(async()=>{if(maintainingCalls)return;maintainingCalls=true;try{await maintainCalls();}catch{console.error('ERROR call maintenance deferred');}finally{maintainingCalls=false;}},5000);
 const mediaTimer = setInterval(() => {
   if (cleaningMedia) return;
   cleaningMedia = cleanupMediaBatch().catch(() => console.error("ERROR media cleanup deferred")).finally(() => { cleaningMedia=undefined; });
@@ -181,6 +185,7 @@ const clean = setInterval(async () => {
     );
     await db.execute(sql`delete from push_subscription where session_id in (select id from session where expires_at<now())`);
     await db.execute(sql`delete from push_delivery where coalesce(completed_at,created_at)<now()-interval '7 days'`);
+    await db.execute(sql`delete from call_push_delivery where coalesce(completed_at,created_at)<now()-interval '7 days'`);
   } catch {
     console.error("ERROR cleanup deferred");
   }
@@ -194,6 +199,7 @@ async function stop() {
   clearInterval(clean);
   clearInterval(pushTimer);
   clearInterval(mediaTimer);
+  clearInterval(callTimer);
   await cleaningMedia;
   await pushing;
   await new Promise<void>((resolve) => io.close(() => resolve()));

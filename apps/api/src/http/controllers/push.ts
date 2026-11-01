@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import {callNotification} from '@api/modules/push/calls';
 import { z, ZodError } from "zod";
 import { db } from "@api/db";
 import { auth } from "@api/modules/auth/config";
@@ -13,6 +14,11 @@ async function handler(request: Request, path: string[] = []) {
     if (!s) throw new HttpError(401,"Войдите в приложение");
     const ok = (data: unknown) => Response.json(data, {headers: {"Cache-Control":"no-store"}});
     if (request.method === "GET") {
+      if(path[0]==='call'&&path.length===1){
+        const q=new URL(request.url).searchParams;
+        const row=await callNotification(z.uuid().parse(q.get('subscriptionId')),z.uuid().parse(q.get('callId')),u.id,s.session.id);
+        return ok(row?{active:row.active,callId:row.callId,chatId:row.chatId,title:row.showPreview?row.callerName:'Beacon',body:row.mode==='video'?'Входящий видеозвонок':'Входящий аудиозвонок'}:null);
+      }
       if (!path.length) return ok(await settings(u.id));
       if (path[0] === "notification" && path.length === 1) {
         const q = new URL(request.url).searchParams;
