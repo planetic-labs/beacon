@@ -12,12 +12,12 @@ const browser=await chromium.launch({executablePath:"/usr/bin/chromium",args:["-
 try{
  for(const width of [1440,390,320]){
   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:"block"}),page=await context.newPage();
-  const errors:string[]=[],external:string[]=[],sent:any[]=[];let current=me;
+  const errors:string[]=[],external:string[]=[],sent:any[]=[];let current=me,identityDelay=0;
   page.on("pageerror",e=>errors.push(e.message));page.on("request",request=>{if(!request.url().startsWith(base)&&!request.url().startsWith("data:"))external.push(request.url());});
   await context.route("**/socket.io/**",route=>route.abort());
   await context.route("**/api/**",async route=>{
    const request=route.request(),path=new URL(request.url()).pathname;let data:unknown={ok:true};
-   if(path==="/api/v1/me")data=current;
+   if(path==="/api/v1/me"){if(identityDelay)await new Promise(resolve=>setTimeout(resolve,identityDelay));data=current;}
    else if(path==="/api/v1/users")data=[me,peer];
    else if(path==="/api/v1/chats")data=[{id:chatId,kind:"direct",name:peer.name,peerId:peer.id,unread:0,lastAt:"2026-01-01T10:00:00Z"}];
    else if(path==="/api/v1/presence"||path==="/api/v1/drafts"||path.endsWith("/receipts"))data=[];
@@ -73,7 +73,12 @@ try{
   await menu.getByRole("button",{name:"Закрыть",exact:true}).click();await page.getByRole("button",{name:"Отправить сообщение",exact:true}).click();await expect.poll(()=>sent.length).toBe(1);assert.equal(sent[0].text,"Привет 😀мир");if(width<780){await expect(voice).toBeVisible();await expect(send).toHaveCount(0);await expect(page.getByRole("button",{name:"Прикрепить",exact:true})).toBeVisible();await expect(page.getByRole("button",{name:"Записать видеокружок",exact:true})).toBeVisible();}
   await open.click();await expect(menu.getByRole("rowgroup",{name:"Недавно использованные",exact:true})).toBeVisible();await page.keyboard.press("Escape");
   await page.reload();await page.getByRole("button",{name:"Добавить эмодзи",exact:true}).click();await expect(menu.getByRole("rowgroup",{name:"Недавно использованные",exact:true})).toBeVisible();await page.keyboard.press("Escape");
-  current={...me,id:id(4)};await page.reload();await page.getByRole("button",{name:"Добавить эмодзи",exact:true}).click();await expect(menu.getByRole("textbox",{name:"Поиск эмодзи",exact:true})).toBeVisible();await expect(menu.getByRole("rowgroup",{name:"Недавно использованные",exact:true})).toHaveCount(0);
+  current={...me,id:id(4)};identityDelay=150;await page.reload();
+  // Cached controls may render before the server confirms the new account.
+  // Complete that transition before testing the new user's emoji history.
+  await expect.poll(()=>page.evaluate(()=>localStorage.getItem("beacon:local-account"))).toBe(current.id);
+  await page.reload();
+  await page.getByRole("button",{name:"Добавить эмодзи",exact:true}).click();await expect(menu.getByRole("textbox",{name:"Поиск эмодзи",exact:true})).toBeVisible();await expect(menu.getByRole("rowgroup",{name:"Недавно использованные",exact:true})).toHaveCount(0);
   assert.deepEqual(errors,[]);assert.deepEqual(external,[],"native emoji never request external services");
   await context.close();console.log(`PASS emoji search, caret insertion, selection replacement, multiple picks, private recents and layout ${width}px`);
  }
