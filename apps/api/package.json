@@ -13,7 +13,7 @@
     "@better-auth/passkey": "1.7.14",
     "@fastify/middie": "9.3.6",
     "@fastify/multipart": "10.1.6",
-    "@fastify/static": "10.1.7",
+    "@fastify/static": "10.1.8",
     "@tus/file-store": "2.1.1",
     "@tus/server": "2.4.6",
     "better-auth": "1.7.14",
