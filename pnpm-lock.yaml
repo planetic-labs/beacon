@@ -204,8 +204,8 @@ importers:
         specifier: 0.45.4
         version: 0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(kysely@0.29.7)(pg@8.23.1)
       fastify:
-        specifier: 5.12.7
-        version: 5.12.7
+        specifier: 5.12.8
+        version: 5.12.8
       pg:
         specifier: 8.23.1
         version: 8.23.1
@@ -246,17 +246,17 @@ importers:
         specifier: 9.3.6
         version: 9.3.6
       '@fastify/multipart':
-        specifier: 10.1.6
-        version: 10.1.6
+        specifier: 10.1.7
+        version: 10.1.7
       '@fastify/static':
         specifier: 10.1.8
         version: 10.1.8
       '@tus/file-store':
-        specifier: 2.1.1
-        version: 2.1.1(@opentelemetry/api@1.10.0)
+        specifier: 2.1.2
+        version: 2.1.2(@opentelemetry/api@1.10.0)
       '@tus/server':
-        specifier: 2.4.6
-        version: 2.4.6(@opentelemetry/api@1.10.0)
+        specifier: 2.4.7
+        version: 2.4.7(@opentelemetry/api@1.10.0)
       better-auth:
         specifier: 1.7.15
         version: 1.7.15(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -264,8 +264,8 @@ importers:
         specifier: 0.45.4
         version: 0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(kysely@0.29.7)(pg@8.23.1)
       fastify:
-        specifier: 5.12.7
-        version: 5.12.7
+        specifier: 5.12.8
+        version: 5.12.8
       livekit-server-sdk:
         specifier: 2.19.2
         version: 2.19.2
@@ -356,8 +356,8 @@ importers:
         version: 14.0.3
     devDependencies:
       '@vitejs/plugin-react':
-        specifier: 6.1.2
-        version: 6.1.2(vite@8.3.5(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15))
+        specifier: 6.2.1
+        version: 6.2.1(vite@8.3.5(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15))
       vite:
         specifier: 8.3.5
         version: 8.3.5(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)
@@ -824,8 +824,8 @@ packages:
   '@fastify/middie@9.3.6':
     resolution: {integrity: sha512-Uvl+1tDXriJsNv3GvC7IDKFVOvNGnsXp+YC6hxKKeMK/00L3NWzmNftI02nHz0xU0VPQlUbESHuGsUNIfn6CVQ==}
 
-  '@fastify/multipart@10.1.6':
-    resolution: {integrity: sha512-5ykP7SkCbL06ek+j7fa4o1F8XASF4+KjqVLbuANqXunxXqjWdCQk0pw/+kWH3e8ho7Mw21EhuZp24EqtR04yKg==}
+  '@fastify/multipart@10.1.7':
+    resolution: {integrity: sha512-Zjqtrjts+litOXPad9wkX9SayV7Jno8Mnw+cNssi0I3FvPbfWwe9GYj69m0W+KMz4kjHViv6q5VKR3b8jW8yjA==}
 
   '@fastify/proxy-addr@5.1.2':
     resolution: {integrity: sha512-uqB4QsgVoro0XDC+DIftIMGXHdBPn+lK6Ek3xXAIxPMCJfqxnbtyEoMCm2KPUVOuIosd7Cyw9HawEqMFM/UA+g==}
@@ -1265,16 +1265,16 @@ packages:
   '@tanstack/store@0.11.2':
     resolution: {integrity: sha512-sJ4mjol8uQsHV0gOJzzjwXfh2Fwm+Sz0+8deqiTm4jGbMdjzNSW+xZCFm0kUa870uhd8yi+DpKnZb5Kc4apa0Q==}
 
-  '@tus/file-store@2.1.1':
-    resolution: {integrity: sha512-/uXV3Ibb4Upirrsj7lSrX+o08H7IKYEkPHV8TKAPPK6CYUcOMTilluOkwPrb9JZydLSYlIBQkhZZVS9sPEfDwQ==}
+  '@tus/file-store@2.1.2':
+    resolution: {integrity: sha512-YW5pgKJJkqpxgpnrDz+4IyOQdet19SOR6cmDYro6zCmMmToZl7GUESsIntsWR8TcCudBkvPlubakUFs56IV82Q==}
     engines: {node: '>=20.19.0'}
 
-  '@tus/server@2.4.6':
-    resolution: {integrity: sha512-QdsNQzatF1r/Tls51vdLTh+Srx/hCdzNBA68bGxruC6N++k8NML+3y0XBV2t3f2KSABeXEE3uhwFOGURuuce2w==}
+  '@tus/server@2.4.7':
+    resolution: {integrity: sha512-vEBfRWazXQTsYrxqHw+1ihDHzruOpUFppLk+y7D5fov6+mA1hwSEGr2Q99+/6DADs7+Vz9t8WXyKILlL5+x5Sw==}
     engines: {node: '>=20.19.0'}
 
-  '@tus/utils@0.7.2':
-    resolution: {integrity: sha512-qUYwmqvUx0n1tWwoTo6fYTkcHpKDtsC7sL3n2TiAA8QskTOUGwwMx1dtXe2S5F7pyrAc9poHlZretDENaw0pjA==}
+  '@tus/utils@0.7.3':
+    resolution: {integrity: sha512-rVOHNOVkNJLl+FQwzZZK1zOFfwaYuzDYjWKvApcRZQ2eA6k3mgRnyyStpCW1gH/U+jrDTSc9M6dkejiyGwpKBg==}
     engines: {node: '>=20.19.0'}
 
   '@types/cors@2.8.19':
@@ -1501,13 +1501,13 @@ packages:
   '@videojs/utils@10.2.0':
     resolution: {integrity: sha512-+uV+rg5Dtq0OpPT3OQsybA+grWyDaluFIQ6f5X8Jqb98gy0momQBo7yPA92TlVL7eiUrPpYb4eX0xeTXLKL73Q==}
 
-  '@vitejs/plugin-react@6.1.2':
-    resolution: {integrity: sha512-fhJNGUdscQa4HkI0xFxwonWyhnVReCPDbXI7FH7jmzpnVCrFQI7PRrhWecO263610vOrs9tr2Y4xcf8uAdFxbw==}
+  '@vitejs/plugin-react@6.2.1':
+    resolution: {integrity: sha512-9KyWCij3r0+qLG3Q62vBmv0VyevmYibAtxaCIVK9o0k6CXgaajZRIe8tpfchQcdZArJ5b/7OrIz4W3b2uxVRDA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
-      '@rolldown/plugin-babel': ^0.1.7 || ^0.2.0
+      '@rolldown/plugin-babel': ^0.1.7 || ^0.2.0 || ^0.3.0
       babel-plugin-react-compiler: ^1.0.0
-      oxc-transform-react: ^0.152.0
+      oxc-transform-react: '>=0.152.0 <0.157.0'
       vite: ^8.0.0
     peerDependenciesMeta:
       '@rolldown/plugin-babel':
@@ -1879,8 +1879,8 @@ packages:
   fastify-plugin@6.0.1:
     resolution: {integrity: sha512-4wW4RxSmvPXLrh5mgQEiu43qU3bw44N2ss4FTkTkQIbprUhE+/s43QX0j/ttcztdWK7PEkHqVthdc5GdEGDvjA==}
 
-  fastify@5.12.7:
-    resolution: {integrity: sha512-v4pEPsTRPuqlDIYiQFB+BHjVN4SdHX9u0ABk0ZDUKbbdY1vsNryUd1j4Z+jQEZajvYIVk047Kimva9/AJ79GYw==}
+  fastify@5.12.8:
+    resolution: {integrity: sha512-moP8exb2sCHLUbJkwp+I6C0padhy4D8lp0SdmzY7HhSdZuqm7O/u3o2aq7u8okaQ//33QDzj3G/u+FsSdB8Qzw==}
 
   fastq@1.20.3:
     resolution: {integrity: sha512-XKv5nnLs6nLF71NgiKJLIZFLkPyIEuOselLG7ujZnGrRfQK8HpvY+WqKhAJUAdLomwVHErVS4LfxFlPq0/FTAw==}
@@ -2407,9 +2407,6 @@ packages:
     resolution: {integrity: sha512-tSRMcPkD/bu1rmY0/XfFP2zLPD8jXVuzHli6Y2UFi9AiG/d0kOd8LAc/G6NolpW8MA1PtgDUhywKCmerS4E3tg==}
     engines: {node: '>=20'}
 
-  set-cookie-parser@2.7.3:
-    resolution: {integrity: sha512-irZHtTqurLna57KQG/s+fzOwv/J6XSH4cs8M/vsrY3uCaQ3S6+QJguAH0WdN47SXlk82voMZ4naWMQf8fdEoIg==}
-
   set-cookie-parser@3.2.1:
     resolution: {integrity: sha512-Npd1Pt+4zb3BrSZDPd2qFwRpS6b1EUEasRrO8xS0zMJi0fApXXK5YuzP0minyJnxwnFHoVoJwA55q0A0cu63gQ==}
 
@@ -2915,7 +2912,7 @@ snapshots:
       path-to-regexp: 8.4.2
       reusify: 1.1.0
 
-  '@fastify/multipart@10.1.6':
+  '@fastify/multipart@10.1.7':
     dependencies:
       '@fastify/busboy': 3.2.4
       '@fastify/deepmerge': 3.2.4
@@ -3307,9 +3304,9 @@ snapshots:
 
   '@tanstack/store@0.11.2': {}
 
-  '@tus/file-store@2.1.1(@opentelemetry/api@1.10.0)':
+  '@tus/file-store@2.1.2(@opentelemetry/api@1.10.0)':
     dependencies:
-      '@tus/utils': 0.7.2
+      '@tus/utils': 0.7.3
       debug: 4.4.3
     optionalDependencies:
       '@redis/client': 5.12.1(@opentelemetry/api@1.10.0)
@@ -3318,12 +3315,11 @@ snapshots:
       - '@opentelemetry/api'
       - supports-color
 
-  '@tus/server@2.4.6(@opentelemetry/api@1.10.0)':
+  '@tus/server@2.4.7(@opentelemetry/api@1.10.0)':
     dependencies:
-      '@tus/utils': 0.7.2
+      '@tus/utils': 0.7.3
       debug: 4.4.3
       lodash.throttle: 4.1.1
-      set-cookie-parser: 2.7.3
       srvx: 0.11.22
     optionalDependencies:
       '@redis/client': 5.12.1(@opentelemetry/api@1.10.0)
@@ -3333,7 +3329,7 @@ snapshots:
       - '@opentelemetry/api'
       - supports-color
 
-  '@tus/utils@0.7.2': {}
+  '@tus/utils@0.7.3': {}
 
   '@types/cors@2.8.19':
     dependencies:
@@ -3476,7 +3472,7 @@ snapshots:
 
   '@videojs/utils@10.2.0': {}
 
-  '@vitejs/plugin-react@6.1.2(vite@8.3.5(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15))':
+  '@vitejs/plugin-react@6.2.1(vite@8.3.5(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.3.5(@types/node@26.6.6)(esbuild@0.28.2)(tsx@4.23.15)
@@ -3767,7 +3763,7 @@ snapshots:
 
   fastify-plugin@6.0.1: {}
 
-  fastify@5.12.7:
+  fastify@5.12.8:
     dependencies:
       '@fastify/ajv-compiler': 4.0.7
       '@fastify/error': 4.2.1
@@ -4280,8 +4276,6 @@ snapshots:
       seroval: 1.7.1
 
   seroval@1.7.1: {}
-
-  set-cookie-parser@2.7.3: {}
 
   set-cookie-parser@3.2.1: {}
 
