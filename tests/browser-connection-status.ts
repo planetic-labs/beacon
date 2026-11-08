@@ -24,7 +24,8 @@ try{for(const width of [390,320,1440]){
  available=false;for(const client of socket.sockets.sockets.values())client.conn.close();
  await expect(dot).toHaveClass(/connecting/);await expect(status).toHaveText("Подключается…");
  available=true;await expect(dot).toHaveClass(/connected/,{timeout:15000});
- const avatar=await page.locator(".compact-list-header > .profile-avatar-button").boundingBox(),tabs=await page.getByRole("tablist",{name:"Папки чатов"}).boundingBox();assert.ok(avatar&&tabs&&tabs.y-avatar.y-avatar.height>=0&&tabs.y-avatar.y-avatar.height<=3,"Thin gap without overlap");
+ const avatar=await page.locator(".compact-list-header > .profile-avatar-button").boundingBox(),tabs=await page.getByRole("tablist",{name:"Папки чатов"}).boundingBox();assert.ok(avatar&&tabs&&tabs.y-avatar.y-avatar.height>=0&&tabs.y-avatar.y-avatar.height<=(width<781?12:3),"Thin gap without overlap");
+ if(width<781){await expect(page.locator(".compact-list-header")).toHaveCSS("background-color","rgb(255, 255, 255)");await expect(page.locator(".compact-list-header > .profile-avatar-button")).toHaveCSS("box-shadow","none");}
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-connected-${width}.png`});
  await context.close();console.log(`PASS connecting, connected, lost and restored connection ${width}px`);

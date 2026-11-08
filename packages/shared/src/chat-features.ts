@@ -5,7 +5,7 @@ export type Mention = z.infer<typeof mentionSchema>;
 export type Receipt = { userId: string; name: string; joinedAt: string; deliveredAt: string; readAt: string };
 export type ChatActivity = { chatId: string; userId: string; name: string; kind: "typing" | "audio" | "circle" | null; expiresAt: number; source: string };
 export type SearchHit = { id: string; chatId: string; chatName: string; authorId: string; authorName: string; text: string; createdAt: string };
-export type SearchResults = { people: { id: string; name: string; image?: string }[]; chats: { id: string; name: string }[]; messages: SearchHit[]; next?: { id: string; at: string } };
+export type SearchResults = { people: { id: string; name: string; image?: string }[]; chats: { id: string; name: string }[]; messages: SearchHit[]; total?: number; next?: { id: string; at: string } };
 export function searchWords(value: string) { return (value.toLowerCase().replaceAll("ё", "е").match(/[\p{L}\p{N}]+/gu) ?? []).slice(0, 12); }
 // Offsets follow textarea/JavaScript UTF-16 positions. Editing through a mention removes it.
 export function moveMentions(before: string, after: string, mentions: Mention[]): Mention[] {

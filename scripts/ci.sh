@@ -87,6 +87,8 @@ docker build -f Dockerfile.test -t beacon-browser .
 docker run --rm beacon-browser pnpm exec tsx tests/browser-pwa.ts
 # Search, receipt and mention UI use synthetic users on desktop and mobile.
 docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-features.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-info.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-new-group.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-calls-ui.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-message-layout.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-swipes.ts
@@ -98,7 +100,9 @@ docker run --rm beacon-browser pnpm exec tsx tests/browser-community-chats.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-chat-media.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-emoji.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-settings.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-materials.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-storage.ts
+docker run --rm beacon-browser pnpm exec tsx tests/browser-storage-query.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-stickers.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-sticker-ownership.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-passkey-registration.ts
@@ -148,3 +152,7 @@ compose run --rm --no-deps web pnpm exec tsx tests/mentions-integration.ts
 # Calls use an isolated fake LiveKit control API, never deployment credentials.
 compose run --rm --no-deps web pnpm exec tsx tests/calls-integration.ts
 compose run --rm --no-deps web pnpm exec tsx tests/call-push-integration.ts
+
+# Published materials use a separate authorization boundary from Storage.
+compose run --rm --no-deps web pnpm exec tsx tests/materials-integration.ts
+compose run --rm --no-deps web pnpm exec tsx tests/integration-upload.ts

@@ -3,19 +3,23 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const browserTests = [
-  "browser-calls-ui.ts", "browser-pwa.ts", "browser-chat-features.ts", "browser-message-layout.ts", "browser-chat-swipes.ts", "browser-chat-list-selection.ts", "browser-chat-scroll.ts",
+  "browser-chat-info.ts", "browser-new-group.ts",
+  "browser-materials.ts", "browser-calls-ui.ts", "browser-pwa.ts", "browser-chat-features.ts", "browser-message-layout.ts", "browser-chat-swipes.ts", "browser-chat-list-selection.ts", "browser-chat-scroll.ts",
   "browser-offline.ts", "browser-attachments.ts", "browser-community-chats.ts", "browser-chat-media.ts",
   "browser-emoji.ts", "browser-settings.ts", "browser-storage.ts", "browser-sticker-ownership.ts", "browser-stickers.ts",
-  "browser-passkey-registration.ts", "browser-recordings.ts",
+  "browser-passkey-registration.ts", "browser-recordings.ts", "browser-storage-query.ts",
 ];
 const documentation = path => /(?:^|\/)\w[^/]*\.md$/i.test(path) || ["LICENSE", ".gitignore"].includes(path);
 const critical = path => path === ".dockerignore" || /^(?:\.github\/|drizzle\/|apps\/api\/src\/(?:server\.|db(?:\/|\.)|http\/controllers\/(?:auth|openid|oauth-metadata)\.|modules\/auth\/|http\/server\.|lib\/http\.)|apps\/web\/src\/auth-client\.|apps\/web\/src\/components\/(?:forms|passkey-confirmation)\.|apps\/web\/(?:vite\.config\.|build\/)|scripts\/(?:ci|migrate|bootstrap|realtime|unit-tests)|Dockerfile|docker-compose|tsconfig|pnpm-|package\.json)/.test(path)
   || /(?:^|\/)package\.json$/.test(path);
 const features = [
+  [/chat-info/i, ["browser-chat-info.ts"]],
+  [/new-group/i, ["browser-new-group.ts"]],
+  [/(?:material|media-player|home|storage-card|storage-playlists)/i, ["browser-materials.ts"]],
   [/calls/i, ["browser-calls-ui.ts"]],
   [/(?:chat-list|chat-folders|chat\/selection)/i, ["browser-chat-list-selection.ts"]],
   [/(?:swipe|message-actions|chat-folders)/i, ["browser-chat-swipes.ts"]],
-  [/storage/i, ["browser-storage.ts"]],
+  [/storage|query-provider/i, ["browser-storage.ts", "browser-storage-query.ts"]],
   [/sticker/i, ["browser-stickers.ts", "browser-sticker-ownership.ts"]],
   [/(?:attachment|message-types|photo|chat-media|read-details)/i, ["browser-attachments.ts", "browser-chat-media.ts"]],
   [/(?:recording|circle|audio)/i, ["browser-recordings.ts"]],

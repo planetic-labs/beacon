@@ -1,10 +1,13 @@
 import type { Upload } from "tus-js-client";
+import {localGeneration} from '../offline';
 export type Space={id:string;name:string;owner_id:string|null;personal_folder_label?:string;online?:boolean;free?:number|null;total?:number|null};
 export type FileNode={id:string;space_id:string;parent_id:string|null;name:string;display_name?:string;directory:boolean;state:string;size:number;mime:string;favorite:boolean;updated_at:string;sha256:string|null;hash_state:string};
 export const fileLabel=(node:Pick<FileNode,"name"|"display_name">)=>node.display_name??node.name;
-export async function storageApi<T>(path:string,method='GET',body?:unknown):Promise<T>{
-  const response=await fetch(`/api/storage${path}`,{method,headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});
-  const result=await response.json();if(!response.ok)throw new Error(result.error??'Не удалось выполнить запрос');return result;
+export class StorageError extends Error{constructor(message:string,public status:number){super(message);}}
+export async function storageApi<T>(path:string,method='GET',body?:unknown,signal?:AbortSignal):Promise<T>{
+  const generation=localGeneration();
+  const response=await fetch(`/api/storage${path}`,{method,headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined,signal:signal?AbortSignal.any([signal,AbortSignal.timeout(30000)]):AbortSignal.timeout(30000),cache:'no-store'});
+  const result=await response.json();if(generation!==localGeneration())throw new DOMException('Account changed','AbortError');if(!response.ok)throw new StorageError(result.error??'Не удалось выполнить запрос',response.status);return result;
 }
 export type Transfer={id:string;name:string;size:number;progress:number;state:'uploading'|'paused'|'processing'|'done'|'error';error?:string;upload:Upload};
 export async function uploadFile(file:File,spaceId:string,parentId:string|null,update:(transfer:Transfer)=>void){

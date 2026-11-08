@@ -1,0 +1,4 @@
+import type {Material,MaterialCatalog} from '../packages/shared/src/materials';
+export const materialId=(n:number)=>`019a0000-0000-7000-8000-${String(700+n).padStart(12,'0')}`;
+export function materialFixture(n=1):Material{return{id:materialId(n),fileName:`${n}.mp4`,kind:'video',mime:'video/mp4',size:2000,title:`Материал ${n}`,description:'Описание материала',duration:5,published:true,available:true,needsReview:false,coverId:null,position:1,revision:1,updatedAt:'2026-01-01T12:00:00Z',chapters:[{seconds:0,title:'Начало'},{seconds:3,title:'Основная часть'}]};}
+export function materialCatalogFixture():MaterialCatalog{return{materials:[1,2,3].map(materialFixture),playlists:[{id:materialId(20),kind:'folder',name:'Встречи',materialIds:[materialId(2),materialId(1)]},{id:materialId(21),kind:'virtual',name:'Практика',materialIds:[materialId(1)]}]};}

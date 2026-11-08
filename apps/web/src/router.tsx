@@ -16,8 +16,10 @@ const app = createRoute({ getParentRoute: () => root, id: "app", component: Beac
 const index = createRoute({ getParentRoute: () => app, path: "/" });
 const chat = createRoute({ getParentRoute: () => app, path: "/chats/$chatId" });
 const materials = createRoute({ getParentRoute: () => app, path: "/materials" });
+const material = createRoute({ getParentRoute: () => app, path: "/materials/$materialId" });
 const home = createRoute({ getParentRoute: () => app, path: "/home" });
 const more = createRoute({ getParentRoute: () => app, path: "/more" });
+const myStickers = createRoute({ getParentRoute: () => app, path: "/more/stickers" });
 const storage = createRoute({ getParentRoute: () => app, path: "/storage" });
 const people = createRoute({ getParentRoute: () => app, path: "/people", beforeLoad: () => { throw redirect({ to: "/", replace: true }); } });
 const profile = createRoute({ getParentRoute: () => app, path: "/profile", beforeLoad: () => { throw redirect({ to: "/settings/profile", replace: true }); } });
@@ -25,7 +27,7 @@ const settings = createRoute({ getParentRoute: () => app, path: "/settings" });
 const settingsProfile = createRoute({ getParentRoute: () => app, path: "/settings/profile" });
 const settingsSecurity = createRoute({ getParentRoute: () => app, path: "/settings/security" });
 const settingsNotifications = createRoute({ getParentRoute: () => app, path: "/settings/notifications" });
-const settingsStickers = createRoute({ getParentRoute: () => app, path: "/settings/stickers" });
+const settingsStickers = createRoute({ getParentRoute: () => app, path: "/settings/stickers", beforeLoad: () => { throw redirect({ to: "/more/stickers", replace: true }); } });
 const settingsFolders = createRoute({ getParentRoute: () => app, path: "/settings/folders" });
 const settingsData = createRoute({ getParentRoute: () => app, path: "/settings/data" });
 const settingsAbout = createRoute({ getParentRoute: () => app, path: "/settings/about" });
@@ -37,7 +39,7 @@ const adminStorage = createRoute({ getParentRoute: () => app, path: "/admin/stor
 const adminChats = createRoute({ getParentRoute: () => app, path: "/admin/chats" });
 const consent = createRoute({ getParentRoute: () => root, path: "/consent", component: Consent });
 export const router = createRouter({
-  routeTree: root.addChildren([app.addChildren([index, chat, materials, storage, more, home, people, profile, settings, settingsProfile, settingsSecurity, settingsNotifications, settingsStickers, settingsFolders, settingsData, settingsAbout, admin, adminStickers, adminUsers, adminGroups, adminChats, adminStorage]), consent]),
+  routeTree: root.addChildren([app.addChildren([index, chat, materials, material, storage, more, myStickers, home, people, profile, settings, settingsProfile, settingsSecurity, settingsNotifications, settingsStickers, settingsFolders, settingsData, settingsAbout, admin, adminStickers, adminUsers, adminGroups, adminChats, adminStorage]), consent]),
   defaultPreload: "intent",
 });
 declare module "@tanstack/react-router" {

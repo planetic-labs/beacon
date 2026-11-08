@@ -16,6 +16,15 @@ export async function chatFeatureScenarios(ids:string[],cookies:string[],chatId:
   assert.ok(search.messages.every((m:Record<string,unknown>)=>!("email" in m)));
   const forbidden=await(await call(query("елоч приглаш"),"GET",undefined,admin)).json();assert.equal(forbidden.messages.length,0);
   assert.equal((await call(query("елоч",`&chatId=${chatId}`),"GET",undefined,admin)).status,403);
+  const scoped=await(await call(query("елоч",`&chatId=${chatId}`),"GET",undefined,two)).json();
+  assert.equal(scoped.total,1);
+  const noScopedHits=await(await call(query("елоч",`&chatId=${chatId}&authorId=${ids[2]}`),"GET",undefined,two)).json();
+  assert.equal(noScopedHits.total,0);
+  await db.execute(sql`insert into message(id,chat_id,author_id,type,content,client_message_id) values ${sql.join(Array.from({length:35},()=>sql`(${v7()},${chatId},${ids[1]},'text',${JSON.stringify({text:'поисковыйсчётчик'})}::jsonb,${v7()})`),sql`,`)}`);
+  const counted=await(await call(query('поисковыйсчётчик',`&chatId=${chatId}`),'GET',undefined,two)).json();
+  assert.equal(counted.total,35);assert.equal(counted.messages.length,30);assert.ok(counted.next);
+  const lastPage=await(await call(query('поисковыйсчётчик',`&chatId=${chatId}&beforeId=${counted.next.id}&beforeAt=${encodeURIComponent(counted.next.at)}`),'GET',undefined,two)).json();
+  assert.equal(lastPage.messages.length,5);assert.equal(lastPage.next,undefined);
   const author=await(await call(query("елоч",`&authorId=${ids[2]}`),"GET",undefined,two)).json();assert.equal(author.messages.length,0);
   const excluded=await(await call(query("елоч","&to=2000-01-01"),"GET",undefined,two)).json();assert.equal(excluded.messages.length,0);
   const injection=await call(query("'; DROP TABLE message; --"),"GET",undefined,two);assert.equal(injection.status,200);

@@ -35,7 +35,7 @@ try{
    }
    await route.fulfill({json:data});
   });
-  await page.goto(`${base}/settings/stickers`);
+  await page.goto(`${base}/more/stickers`);
   await expect(page.getByRole("heading",{name:"Мои наборы стикеров",exact:true})).toBeVisible();
   await expect(page.locator(".sticker-admin-pack")).toHaveCount(1);
   await expect(page.locator(".sticker-admin-pack")).toContainText("Мой набор");
@@ -53,7 +53,7 @@ try{
   if(role==="admin"){
    await page.goto(`${base}/admin/stickers`);await expect(page.locator(".sticker-admin-pack")).toHaveCount(2);
    await expect(page.getByText("Владелец: Другой пользователь",{exact:true})).toBeVisible();assert.ok(scopes.includes("all"));
-   await page.goto(`${base}/settings/stickers`);await expect(page.locator(".sticker-admin-pack")).toHaveCount(1);
+   await page.goto(`${base}/more/stickers`);await expect(page.locator(".sticker-admin-pack")).toHaveCount(1);
   }
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);
   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-own-stickers-${role}-${width}.png`});
