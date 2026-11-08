@@ -108,8 +108,9 @@ docker run --rm beacon-browser pnpm exec tsx tests/browser-sticker-ownership.ts
 docker run --rm beacon-browser pnpm exec tsx tests/browser-passkey-registration.ts
 # Native recording UI checks use fake devices and synthetic API responses.
 docker run --rm beacon-browser pnpm exec tsx tests/browser-recordings.ts
+# This fixture writer uses the host UID, which must not rewrite image dependencies.
 docker run --rm --user "$(id -u):$(id -g)" -v "$runtime:/run/config" beacon-tooling \
-  pnpm exec tsx scripts/generate-push-keys.ts /run/config/test.env
+  node --import tsx scripts/generate-push-keys.ts /run/config/test.env
 compose up -d --wait db
 compose run --rm --no-deps web pnpm db:migrate
 compose run --rm --no-deps web pnpm typecheck

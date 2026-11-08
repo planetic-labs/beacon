@@ -1,5 +1,5 @@
 import { defineConfig } from "vite";
-import { shellCache } from "./build/shell-cache";
+import { shellCache } from "./build/shell-cache.ts";
 import react from "@vitejs/plugin-react";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
