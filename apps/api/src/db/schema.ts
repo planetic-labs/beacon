@@ -536,3 +536,40 @@ export const chatFolderItem = pgTable("chat_folder_item", {
   folderId:uuid("folder_id").notNull().references(()=>chatFolder.id,{onDelete:"cascade"}),
   chatId:uuid("chat_id").notNull().references(()=>chats.id,{onDelete:"cascade"}),
 },t=>[primaryKey({columns:[t.folderId,t.chatId]})]);
+
+// File-owned metadata. Publication is derived from its parent folder's setting.
+// Legacy attachments remain archived. Manual playlists are virtual collections.
+export const storageMaterialFolder=pgTable('storage_material_folder',{
+  folderId:uuid('folder_id').primaryKey().references(()=>storageNodes.id,{onDelete:'cascade'}),
+  enabled:boolean('enabled').notNull().default(false),updatedAt:time('updated_at'),
+});
+export const material = pgTable('material', {
+  id: uuid('id').primaryKey().references(()=>storageNodes.id,{onDelete:'cascade'}),
+  title: text('title').notNull(), description: text('description').notNull().default(''),
+  coverId: uuid('cover_id').references(()=>storageNodes.id,{onDelete:'set null'}),
+  published: boolean('published').notNull().default(false), needsReview:boolean('needs_review').notNull().default(false),
+  duration: integer('duration').notNull(), sourceHash:text('source_hash').notNull(), fingerprint:text('fingerprint').notNull(),
+  revision:integer('revision').notNull().default(1), createdBy:uuid('created_by').notNull().references(()=>user.id),
+  createdAt:time('created_at'), updatedAt:time('updated_at'),
+});
+export const materialChapter=pgTable('material_chapter',{
+  materialId:uuid('material_id').notNull().references(()=>material.id,{onDelete:'cascade'}),
+  ordinal:integer('ordinal').notNull(), seconds:integer('seconds').notNull(), title:text('title').notNull(),
+},t=>[primaryKey({columns:[t.materialId,t.ordinal]}),check('material_chapter_seconds_check',sql`${t.seconds}>=0`)]);
+export const materialAttachment=pgTable('material_attachment',{
+  materialId:uuid('material_id').notNull().references(()=>material.id,{onDelete:'cascade'}),
+  ordinal:integer('ordinal').notNull(), label:text('label').notNull(),
+  fileId:uuid('file_id').references(()=>storageNodes.id,{onDelete:'cascade'}), url:text('url'),
+},t=>[primaryKey({columns:[t.materialId,t.ordinal]}),check('material_attachment_target_check',sql`(${t.fileId} is not null)::int+(${t.url} is not null)::int=1`)]);
+export const materialPlaylist=pgTable('material_playlist',{
+  id:id(),name:text('name').notNull(),enabled:boolean('enabled').notNull().default(false),createdAt:time('created_at'),
+});
+export const materialPlaylistItem=pgTable('material_playlist_item',{
+  playlistId:uuid('playlist_id').notNull().references(()=>materialPlaylist.id,{onDelete:'cascade'}),
+  materialId:uuid('material_id').notNull().references(()=>material.id,{onDelete:'cascade'}),ordinal:integer('ordinal').notNull(),
+},t=>[primaryKey({columns:[t.playlistId,t.materialId]})]);
+export const materialProgress=pgTable('material_progress',{
+  userId:uuid('user_id').notNull().references(()=>user.id,{onDelete:'cascade'}),
+  materialId:uuid('material_id').notNull().references(()=>material.id,{onDelete:'cascade'}),
+  revision:integer('revision').notNull(),position:integer('position').notNull(),updatedAt:time('updated_at'),
+},t=>[primaryKey({columns:[t.userId,t.materialId]}),check('material_progress_position_check',sql`${t.position}>=0`)]);

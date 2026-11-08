@@ -1,81 +1,46 @@
-import { Button } from "./app-button";
-import { useState } from "react";
-import { ArrowLeft, ChevronRight, Clapperboard, Grid2X2, Library, ListVideo, Menu, Play, Plus, Search, X } from "lucide-react";
-import "../materials.css";
-import { MediaPlayer } from "./media-player";
-import { Dialog } from "./ui";
-
-// Demonstration catalogue; the flower clip is locally hosted CC0 media.
-const playlists = [
-  { id: "meetings", name: "Дикая природа", color: "#8299ba" },
-  { id: "practice", name: "Мир океана", color: "#82a496" },
-  { id: "beacon", name: "Планета Земля", color: "#b095ba" },
-  { id: "short", name: "Экспедиции", color: "#c4a17f" },
-];
-export const videos = [
-  { id: "ideas", title: "Серенгети: великая миграция", playlist: "meetings", cover: "Сердце саванны", duration: "32:18", date: "Сегодня", theme: "indigo", progress: 36 },
-  { id: "focus", title: "Тайная жизнь кораллового рифа", playlist: "practice", cover: "Под водой", duration: "18:42", date: "Сегодня", theme: "sage", progress: 0 },
-  { id: "first", title: "Леса, которые меняют климат", playlist: "beacon", cover: "Дыхание леса", duration: "08:15", date: "Вчера", theme: "lilac", progress: 62 },
-  { id: "questions", title: "Снежный барс: по следам горного призрака", playlist: "meetings", cover: "Выше облаков", duration: "46:07", date: "Вчера", theme: "sand", progress: 0 },
-  { id: "notes", title: "Путешествие к северному сиянию", playlist: "short", cover: "Свет Арктики", duration: "05:24", date: "На этой неделе", theme: "rose", progress: 0 },
-  { id: "workshop", title: "Киты: голоса из глубины", playlist: "practice", cover: "Голоса океана", duration: "27:36", date: "На этой неделе", theme: "blue", progress: 0 },
-  { id: "tools", title: "Жизнь на краю пустыни", playlist: "beacon", cover: "Мир песков", duration: "11:09", date: "На этой неделе", theme: "indigo", progress: 0 },
-  { id: "pause", title: "Камчатка: земля вулканов", playlist: "short", cover: "Сила Земли", duration: "04:50", date: "На этой неделе", theme: "sage", progress: 0 },
-];
-type Video = typeof videos[number];
-const demo: Video = { id: "flower", title: "Цветы крупным планом · тест плеера", playlist: "beacon", cover: "Мир в деталях", duration: "00:05", date: "Тестовое видео · CC0", theme: "sage", progress: 0 };
-videos.unshift(demo);
-export function VideoCard({ video, compact = false, open }: { video: Video; compact?: boolean; open: () => void }) {
-  const playlist = playlists.find(item => item.id === video.playlist)!;
-  return <article className={`mv-video ${compact ? "compact" : ""}`}>
-    <Button type="button" className={`mv-cover ${video.theme}`} disabled={video.id !== demo.id} onClick={open} aria-label={`Смотреть «${video.title}»${video.id !== demo.id ? " — появится позже" : ""}`}>
-      <span className="mv-cover-category">{playlist.name}</span>
-      <span className="mv-cover-shape" aria-hidden="true" />
-      <span className="mv-cover-title">{video.cover}</span>
-      <span className="mv-cover-play"><Play size={17} fill="currentColor" /></span>
-      <span className="mv-duration">{video.duration}</span>
-      {video.progress > 0 && <span className="mv-progress" aria-hidden="true"><span style={{width:`${video.progress}%`}} /></span>}
-    </Button>
-    <div className="mv-video-info"><h3>{video.title}</h3><p>{playlist.name}</p><span>{compact ? `Просмотрено ${video.progress}%` : video.date}</span></div>
-  </article>;
+import {useEffect,useRef,useState} from 'react';
+import {useLocation,useNavigate,useSearch} from '@tanstack/react-router';
+import {ArrowLeft,ChevronRight,Library,ListVideo,Menu,Play,Search,X,FolderOpen,Folder,Music,FileText,Image as ImageIcon,Link as LinkIcon,Grid2X2} from 'lucide-react';
+import type {Material} from '@beacon/shared';
+import {Button} from './app-button';
+import {localGeneration} from '../offline';
+import {materialApi,useMaterialCatalog,useMaterialDetail} from './materials-data';
+import {FileContent,materialTime,kindLabel} from './file-content';
+import type {PlaybackEvent} from './media-player';
+import '../materials.css';
+export {materialTime} from './file-content';
+export function VideoCard({video,compact=false,open}:{video:Material;compact?:boolean;open:()=>void}){
+ const progress=video.duration?Math.min(100,video.position/video.duration*100):0,tone=['sage','indigo','sand','lilac','blue','rose'][Array.from(video.id).reduce((n,ch)=>n+ch.charCodeAt(0),0)%6],Icon=video.kind==='audio'?Music:video.kind==='image'?ImageIcon:video.kind==='document'?FileText:Play;
+ return <article className={`mv-video ${compact?'compact':''}`}><Button type="button" className={`mv-cover ${tone}`} onClick={open} aria-label={`Открыть «${video.title}»`}>
+ {video.coverId?<img className="material-cover" src={`/api/materials/${video.id}/cover`} alt="" loading="lazy"/>:video.kind==='image'?<img className="material-cover" src={`/api/materials/${video.id}/content`} alt="" loading="lazy"/>:<><span className="mv-cover-shape"/><span className="mv-cover-title">{video.title}</span></>}
+ <span className="mv-cover-play"><Icon size={17}/></span><span className="mv-duration">{video.duration?materialTime(video.duration):kindLabel[video.kind]}</span>{progress>0&&<span className="mv-progress" aria-hidden="true"><span style={{width:progress+'%'}}/></span>}</Button><div className="mv-video-info"><h3>{video.title}</h3><p>{kindLabel[video.kind]} · {new Date(video.updatedAt).toLocaleDateString('ru-RU')}</p>{compact&&<span>Просмотрено {Math.round(progress)}%</span>}</div></article>;
 }
-export function Materials({ back }: { back: () => void }) {
-  const [watching, setWatching] = useState(false);
-  const [view, setView] = useState("overview");
-  const [menuOpen, setMenuOpen] = useState(false);
-  const playlist = playlists.find(item => item.id === view);
-  const visible = playlist ? videos.filter(video => video.playlist === playlist.id) : videos;
-  function select(value: string) { setView(value); setMenuOpen(false); }
-  return <>
-    {watching && <Dialog title={demo.title} className="material-player-dialog" close={() => setWatching(false)}><MediaPlayer src="/demo/flower.mp4" title={demo.title} pauseWhenHidden /><p className="material-player-note">Короткое тестовое видео MDN (CC0). При скрытии приложения воспроизведение останавливается.</p></Dialog>}
-    {menuOpen && <Button type="button" className="mv-backdrop" aria-label="Закрыть меню материалов" onClick={() => setMenuOpen(false)} />}
-    <aside className={`mv-sidebar ${menuOpen ? "open" : ""}`} aria-label="Меню материалов" onKeyDown={event => { if(event.key === "Escape") setMenuOpen(false); }}>
-      <header className="mv-brand"><span><Library size={21} /></span><h1>Материалы</h1><Button type="button" className="mv-mobile-close mv-icon-button" aria-label="Закрыть меню" onClick={() => setMenuOpen(false)}><X size={20} /></Button></header>
-      <nav className="mv-navigation" aria-label="Разделы материалов">
-        <Button type="button" className={view === "overview" ? "active" : ""} aria-current={view === "overview" ? "page" : undefined} onClick={() => select("overview")}><Grid2X2 size={19} />Обзор</Button>
-        <Button type="button" className={view === "all" ? "active" : ""} aria-current={view === "all" ? "page" : undefined} onClick={() => select("all")}><Clapperboard size={19} />Все видео<span className="mv-count">{videos.length}</span></Button>
-      </nav>
-      <div className="mv-playlist-label"><h2>Плейлисты</h2><Button type="button" className="mv-icon-button" aria-label="Создать плейлист" title="Появится позже" disabled><Plus size={17} /></Button></div>
-      <nav className="mv-playlists" aria-label="Плейлисты">
-        {playlists.map(item => <Button type="button" key={item.id} className={view === item.id ? "active" : ""} aria-current={view === item.id ? "page" : undefined} onClick={() => select(item.id)}><span className="mv-playlist-icon" style={{background:item.color}}><ListVideo size={19} /></span><span className="mv-playlist-name">{item.name}<small>{videos.filter(video => video.playlist === item.id).length} видео</small></span></Button>)}
-      </nav>
-      <p className="mv-demo-note">Демонстрационные материалы</p>
-    </aside>
-    <main className="mv-main">
-      <header className="mv-topbar">
-        <Button type="button" className="mv-mobile-back mv-icon-button" aria-label="Назад к чатам" onClick={back}><ArrowLeft size={20} /></Button>
-        <Button type="button" className="mv-menu-toggle mv-icon-button" aria-label="Открыть меню материалов" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Menu size={20} /></Button>
-        <div className="mv-search"><Search size={18} /><input type="search" aria-label="Поиск по материалам" placeholder="Найти видео или плейлист" disabled /></div>
-        <Button type="button" className="mv-add" disabled title="Появится позже"><Plus size={18} /><span>Добавить материал</span></Button>
-      </header>
-      <div className="mv-content">
-        <div className="mv-heading"><div>{playlist && <span className="mv-eyebrow">Плейлист</span>}<h2>{playlist?.name ?? (view === "all" ? "Все видео" : "Материалы")}</h2><p>{playlist ? `${visible.length} видео · Демонстрационный плейлист` : "Документальные истории о природе, животных и нашей планете"}</p></div><span className="mv-preview-label">Макет</span></div>
-        {view === "overview" && <section className="mv-continue" aria-label="Продолжить просмотр"><div className="mv-section-heading"><h2>Продолжить просмотр</h2></div><div className="mv-continue-grid">{videos.filter(video => video.progress > 0).map(video => <VideoCard key={video.id} video={video} compact open={() => setWatching(true)} />)}</div></section>}
-        <section aria-label={playlist?.name ?? "Видео"}>
-          <div className="mv-section-heading"><h2>{playlist ? "Видео в плейлисте" : view === "all" ? "Медиатека" : "Свежие материалы"}</h2>{view === "overview" && <Button type="button" onClick={() => select("all")}>Все видео<ChevronRight size={16} /></Button>}</div>
-          <div className="mv-video-grid">{visible.map(video => <VideoCard key={video.id} video={video} open={() => setWatching(true)} />)}</div>
-        </section>
-      </div>
-    </main>
-  </>;
+export function Materials({back,admin=false}:{back:()=>void;admin?:boolean}){
+ const catalog=useMaterialCatalog(),navigate=useNavigate(),pathname=useLocation({select:l=>l.pathname}),search=useSearch({strict:false}),id=pathname.startsWith('/materials/')?pathname.split('/')[2]:undefined,query=useMaterialDetail(id),detail=query.data;
+ const [view,setView]=useState('overview'),[filter,setFilter]=useState(''),[menuOpen,setMenuOpen]=useState(false),[seek,setSeek]=useState<{seconds:number;key:number}>(),[error,setError]=useState('');
+ const position=useRef(0),lastSave=useRef(0),queue=useRef(Promise.resolve()),positions=useRef(new Map<string,number>());
+ const explicit=search.t===undefined?undefined:Number(search.t),startAt=explicit!==undefined&&Number.isFinite(explicit)&&explicit>=0?explicit:detail?.position;
+ function persist(m:Material,p:number){const generation=localGeneration();queue.current=queue.current.then(()=>generation===localGeneration()?materialApi('/'+m.id+'/progress','POST',{position:Math.max(0,Math.min(p,m.duration)),revision:m.revision},true):undefined).then(()=>{}).catch(()=>{});}
+ useEffect(()=>{setSeek(undefined);setError('');},[id]);
+ useEffect(()=>{
+  if(!detail||!['video','audio'].includes(detail.kind)||!detail.available||detail.needsReview)return;
+  const m=detail;position.current=startAt??0;positions.current.set(m.id,position.current);lastSave.current=0;
+  const flush=()=>persist(m,positions.current.get(m.id)??m.position),hidden=()=>{if(document.hidden)flush();};
+  document.addEventListener('visibilitychange',hidden);window.addEventListener('pagehide',flush);return()=>{document.removeEventListener('visibilitychange',hidden);window.removeEventListener('pagehide',flush);flush();};
+ },[detail?.id,detail?.revision,detail?.available,detail?.needsReview,explicit]);
+ function playback(event:PlaybackEvent){if(!detail)return;position.current=event.position;positions.current.set(detail.id,event.position);if(['play','ratechange','seeking'].includes(event.type))return;const now=Date.now();if(event.type==='timeupdate'&&now-lastSave.current<10000)return;lastSave.current=now;persist(detail,event.position);}
+ const playlist=catalog.playlists.find(p=>p.id===view),visible=(playlist?playlist.materialIds.map(id=>catalog.materials.find(m=>m.id===id)).filter((m):m is Material=>!!m):catalog.materials).filter(m=>m.title.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
+ const open=(materialId:string)=>void navigate({to:'/materials/$materialId',params:{materialId},search:{}});
+ const choose=(key:string)=>{setView(key);setMenuOpen(false);void navigate({to:'/materials',search:{}});};
+ return <>{menuOpen&&<Button className="mv-backdrop" aria-label="Закрыть меню материалов" onClick={()=>setMenuOpen(false)}/>}
+ <aside className={`mv-sidebar ${menuOpen?'open':''}`} aria-label="Меню материалов"><header className="mv-brand"><span><Library size={21}/></span><h1>Материалы</h1><Button className="mv-mobile-close mv-icon-button" aria-label="Закрыть меню" onClick={()=>setMenuOpen(false)}><X size={20}/></Button></header><nav className="mv-navigation" aria-label="Разделы материалов">{[['overview','Обзор'],['all','Все материалы']].map(([key,label])=><Button key={key} className={!id&&view===key?'active':''} onClick={()=>choose(key)}><Grid2X2 size={19}/>{label}</Button>)}</nav><div className="mv-playlist-label"><h2>Плейлисты</h2></div><nav className="mv-playlists" aria-label="Плейлисты">{catalog.playlists.map(p=><Button key={p.id} className={view===p.id?'active':''} onClick={()=>choose(p.id)}><span className="mv-playlist-icon">{p.kind==='folder'?<Folder size={19}/>:<ListVideo size={19}/>}</span><span className="mv-playlist-name">{p.name}<small>{p.kind==='folder'?'Папка':'Подборка'}</small></span><span>{p.materialIds.length}</span></Button>)}</nav></aside>
+ <main className="mv-main">{!id&&<header className="mv-topbar"><Button className="mv-mobile-back mv-icon-button" aria-label="Назад к чатам" onClick={back}><ArrowLeft size={20}/></Button><Button className="mv-menu-toggle mv-icon-button" aria-label="Открыть меню материалов" onClick={()=>setMenuOpen(true)}><Menu size={20}/></Button><div className="mv-search"><Search size={18}/><input type="search" aria-label="Поиск по материалам" placeholder="Найти материал" value={filter} onChange={e=>setFilter(e.target.value)}/></div>{admin&&<Button className="mv-add" onClick={()=>void navigate({to:'/storage',search:{}})}><FolderOpen size={18}/><span>Открыть хранилище</span></Button>}</header>}
+ <div className="mv-content">{(catalog.error||query.error||error)&&<div role="alert"><p>{error||query.error?.message||catalog.error}</p><Button className="text-button" onClick={()=>{setError('');void catalog.refresh();if(id)void query.refetch();}}>Повторить загрузку</Button></div>}{!!catalog.checking&&!id&&<p className="material-hint" role="status">Проверяем файлы. Список обновится автоматически.</p>}
+ {id?(detail?<section className="material-detail" aria-label="Просмотр материала"><div className="material-detail-toolbar"><Button className="text-button" onClick={()=>void navigate({to:'/materials',search:{}})}><ArrowLeft size={18}/>К материалам</Button>{admin&&<Button className="text-button" onClick={()=>void navigate({to:'/storage',search:{file:detail.id}})}><FolderOpen size={17}/>Карточка в хранилище</Button>}</div>
+ <div className={`material-watch-layout ${detail.chapters.length?'has-chapters':''}`}><div className="material-watch-main"><FileContent key={detail.id+'/'+explicit} file={detail} startAt={startAt} seek={seek} onPlaybackEvent={playback}/><div className="material-detail-info"><div className="material-detail-meta"><span>{kindLabel[detail.kind]}</span>{detail.duration>0&&<span>{materialTime(detail.duration)}</span>}</div><h2>{detail.title}</h2><p className="material-description">{detail.description}</p>{['video','audio'].includes(detail.kind)&&<Button className="text-button" onClick={()=>{const url=new URL(location.href);url.searchParams.set('t',String(Math.floor(position.current)));void navigator.clipboard.writeText(url.href).catch(()=>setError('Не удалось скопировать ссылку'));}}><LinkIcon size={16}/>Ссылка на текущий момент</Button>}</div></div>
+ {!!detail.chapters.length&&<section className="material-chapters" aria-label="Оглавление"><header><ListVideo size={20}/><h3>Оглавление</h3><span>{detail.chapters.length}</span></header>{detail.chapters.map((ch,index)=><Button key={ch.seconds} onClick={()=>{setSeek({seconds:ch.seconds,key:Date.now()});position.current=ch.seconds;}}><span className="material-chapter-number">{String(index+1).padStart(2,'0')}</span><span>{ch.title}<time>{materialTime(ch.seconds)}</time></span><Play size={14}/></Button>)}</section>}</div></section>:!query.error&&<p role="status">Загружаем материал…</p>):<>
+ <div className="mv-heading"><div>{playlist&&<span className="mv-eyebrow">{playlist.kind==='folder'?'Плейлист из папки':'Виртуальный плейлист'}</span>}<h2>{playlist?.name??'Материалы'}</h2><p>{playlist?`${visible.length} материалов`:'Видео, аудио и документы сообщества'}</p></div></div>
+ {catalog.loading?<p role="status">Загружаем материалы…</p>:<>{view==='overview'&&catalog.materials.some(m=>m.position>0&&m.position<m.duration-2)&&<section className="mv-continue" aria-label="Продолжить просмотр"><div className="mv-section-heading"><h2>Продолжить просмотр</h2></div><div className="mv-continue-grid">{catalog.materials.filter(m=>m.position>0&&m.position<m.duration-2).map(m=><VideoCard key={m.id} video={m} compact open={()=>open(m.id)}/>)}</div></section>}<section aria-label={playlist?.name??'Материалы'}><div className="mv-section-heading"><h2>{playlist?'В плейлисте':view==='all'?'Медиатека':'Свежие материалы'}</h2>{view==='overview'&&<Button onClick={()=>setView('all')}>Все материалы<ChevronRight size={16}/></Button>}</div><div className="mv-video-grid">{visible.map(m=><VideoCard key={m.id} video={m} open={()=>open(m.id)}/>)}</div>{!visible.length&&<div className="material-empty"><span><Library size={30}/></span><h3>{filter?'Ничего не нашлось':'Здесь будут ваши материалы'}</h3><p>{admin?'В хранилище включите показ папки как плейлиста или создайте виртуальную подборку.':'Опубликованные материалы появятся здесь.'}</p></div>}</section></>}
+ </>}
+ </div></main></>;
 }

@@ -26,7 +26,8 @@ export class MountedStorage implements FileStorage {
   }
   async file(key:string){const relative=await this.relative(key);return this.path(relative,relative.startsWith('.beacon-trash/'));}
   async info(key:string){try{const s=await lstat(await this.file(key));return{size:s.size};}catch(error){if(absent(error))return null;throw error;}}
-  async readStream(key:string,start?:number,end?:number){const handle=await open(await this.file(key),constants.O_RDONLY|constants.O_NOFOLLOW);return handle.createReadStream({start,end,autoClose:true});}
+  async openRead(key:string){return open(await this.file(key),constants.O_RDONLY|constants.O_NOFOLLOW);}
+  async readStream(key:string,start?:number,end?:number){const handle=await this.openRead(key);return handle.createReadStream({start,end,autoClose:true});}
   async read(key:string){const chunks:Buffer[]=[];for await(const chunk of await this.readStream(key))chunks.push(Buffer.from(chunk));return Buffer.concat(chunks);}
   async save(key:string,bytes:Uint8Array){await this.saveStream(key,Readable.from([bytes]));}
   async saveStream(key:string,stream:Readable){await this.publish(key,stream);}

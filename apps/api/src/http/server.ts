@@ -1,3 +1,6 @@
+import { materialsRoutes } from "./controllers/materials";
+import {integrationUploadRoutes} from './controllers/integration-upload';
+import {apiDocumentation} from './api-docs';
 import { storageRoutes } from "./controllers/storage";
 import { Readable } from "node:stream";
 import { attachmentRoutes } from "./controllers/attachment";
@@ -10,6 +13,7 @@ import { GET as v1, POST as v1Post, PATCH as v1Patch, DELETE as v1Delete } from 
 import { GET as authGet, POST as authPost } from "./controllers/auth";
 import { GET as pushGet, POST as pushPost, PATCH as pushPatch, DELETE as pushDelete } from "./controllers/push";
 import { handler as stickers } from "./controllers/stickers";
+import { POST as transcription } from "./controllers/transcription";
 import { POST as recording } from "./controllers/recording";
 import { POST as photo } from "./controllers/photo";
 import { POST as avatar } from "./controllers/avatar";
@@ -41,6 +45,7 @@ export async function createApp(options: { dev?: boolean; serveWeb?: boolean } =
     reply.header("X-Robots-Tag", "noindex, nofollow, noarchive");
     if (!request.url.startsWith("/assets/")) reply.header("Cache-Control", "no-store");
   });
+  await apiDocumentation(app);
   function bridge(handler: Handler) {
     return async (request: FastifyRequest, reply: FastifyReply) => {
       // Keep the configured issuer stable; never derive it from an untrusted Host.
@@ -50,7 +55,12 @@ export async function createApp(options: { dev?: boolean; serveWeb?: boolean } =
       const init: RequestInit = { method: request.method, headers: fromNodeHeaders(request.headers) };
       if (request.method !== "GET" && request.method !== "HEAD" && request.body !== undefined)
         init.body = new Uint8Array(request.body as Buffer).buffer;
-      const response = await handler(new Request(url, init));
+      const cancellation=handler===transcription?new AbortController():undefined;
+      const disconnected=()=>{if(!reply.raw.writableEnded)cancellation?.abort();};
+      if(cancellation){init.signal=cancellation.signal;reply.raw.once("close",disconnected);}
+      let response:Response;
+      try{response=await handler(new Request(url,init));}finally{if(cancellation)reply.raw.off("close",disconnected);}
+
       reply.code(response.status);
       response.headers.forEach((value, key) => { if (key !== "set-cookie") reply.header(key, value); });
       const cookies = response.headers.getSetCookie();
@@ -74,6 +84,8 @@ export async function createApp(options: { dev?: boolean; serveWeb?: boolean } =
   }
   await app.register(attachmentRoutes);
   await app.register(storageRoutes);
+  await app.register(integrationUploadRoutes);
+  await app.register(materialsRoutes);
   app.post("/api/avatar", bridge(avatar));
   for (const method of ["GET", "POST", "PATCH"] as const) {
     app.route({ method, url: "/api/stickers", bodyLimit: 101 * 1024 * 1024, handler: bridge(stickers) });
@@ -82,6 +94,7 @@ export async function createApp(options: { dev?: boolean; serveWeb?: boolean } =
   app.delete("/api/stickers/:id", bridge(stickers));
   app.delete("/api/stickers/:id/stickers/:stickerId", bridge(stickers));
   app.patch("/api/stickers/:id/stickers/:stickerId", bridge(stickers));
+  app.post("/api/transcriptions", { bodyLimit: 26 * 1024 * 1024 }, bridge(transcription));
   app.post("/api/recordings", { bodyLimit: 26 * 1024 * 1024 }, bridge(recording));
   app.post("/api/photos", { bodyLimit: 51 * 1024 * 1024 }, bridge(photo));
   app.get("/media/:id", bridge(request => media(request,

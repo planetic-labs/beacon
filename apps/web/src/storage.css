@@ -198,3 +198,5 @@
 .ss-aria-actions [role="menu"] { outline:none; }
 .ss-aria-actions [role="menuitem"] { padding:9px; border-radius:6px; outline:none; cursor:pointer; }
 .ss-aria-actions [role="menuitem"][data-focused] { background:#eef0fb; }
+.ss-playlist-label{display:flex;justify-content:space-between;align-items:center;padding-right:14px;}
+.ss-nav small{display:block;margin-top:4px;color:var(--muted);font-size:10px;font-weight:400;}

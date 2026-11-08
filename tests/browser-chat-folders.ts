@@ -27,7 +27,7 @@ try{for(const width of [1440,390,320]){
  await page.getByRole("button",{name:"Меню списка чатов",exact:true}).click();
  await expect(page.getByRole("menuitem")).toHaveText(["Создать группу","Избранное"]);
  await page.getByRole("menuitem",{name:"Создать группу",exact:true}).click();
- await expect(page.getByRole("dialog").getByRole("combobox")).toHaveValue("group");await page.keyboard.press("Escape");
+ await expect(page.getByRole("dialog",{name:"Создать группу"})).toBeVisible();await expect(page.getByRole("dialog").getByRole("combobox")).toHaveCount(0);await page.keyboard.press("Escape");
  await page.goto(base+"/settings");await page.getByRole("navigation",{name:"Разделы настроек"}).getByRole("button",{name:"Папки чатов",exact:true}).click();
  await page.getByRole("button",{name:"Создать папку",exact:true}).click();
  await page.getByRole("textbox",{name:"Название папки"}).fill("Личные");await page.getByRole("checkbox",{name:peer.name}).check();

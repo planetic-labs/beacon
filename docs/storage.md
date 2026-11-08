@@ -4,9 +4,10 @@ The Files section uses Beacon sessions, user UUIDs and membership groups. It has
 separate authentication database. Administrators cannot open another user's personal
 space; shared-space administration is separate from access to private messages.
 
-The Files section is temporarily available only to the built-in Administrators role,
-including direct routes, downloads and resumable upload endpoints. Folder/group grants
-remain stored for future rollout but do not override this section-wide restriction.
+The full Files interface, original downloads and browser resumable uploads remain
+temporarily available only to the Administrators role. File-card and folder-playlist
+endpoints use existing folder/group read/write grants directly; they do not add
+a separate permission for publication.
 
 ## First implementation
 
@@ -178,3 +179,12 @@ ready entries can also be dragged onto a listed folder or a breadcrumb to move t
 within the current storage. These moves use the existing authenticated PATCH route;
 permissions, collisions and directory-cycle checks remain enforced by the server.
 The menu-based Move action remains available for touch and keyboard users.
+# File cards and Materials
+
+Files own their card data (title, description, cover and media chapters).
+Use the file action "Карточка файла" to edit it. For folders, "Папка как плейлист"
+enables automatic publication of direct files, sorted by name. The sidebar also
+manages virtual playlists with ordered references to files across folders.
+All references share one file/card/progress; bytes are not duplicated.
+Turning off or deleting a playlist never deletes files or card metadata.
+See [materials.md](materials.md) for publication checks, migration and API details.

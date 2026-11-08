@@ -1,5 +1,4 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
-import type { SyntheticEvent } from "react";
 import "../media-player.css";
 
 const Player = lazy(() => import("./media-player-core"));
@@ -16,6 +15,9 @@ export type MediaPlayerProps = {
   className?: string;
   poster?: string;
   pauseWhenHidden?: boolean;
+  startAt?: number;
+  hideDownload?: boolean;
+  seek?: {seconds:number;key:number};
   onPlaybackEvent?: (event: PlaybackEvent) => void;
 };
 // Shared across materials, chat, and future storage previews. Only one local
@@ -31,7 +33,7 @@ export function usePlaybackPolicy(pauseWhenHidden = false) {
       if (owned.current) { owned.current.pause(); playing.delete(owned.current); }
     };
   }, [pauseWhenHidden]);
-  return (event: SyntheticEvent<HTMLMediaElement>) => {
+  return (event: {currentTarget:HTMLMediaElement}) => {
     const media = event.currentTarget;
     owned.current = media;
     for (const other of playing) if (other !== media) { other.pause(); playing.delete(other); }

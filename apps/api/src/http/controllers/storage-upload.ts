@@ -54,16 +54,20 @@ class MountedFileStore extends DataStore {
   override async write(...args:Parameters<FileStore['write']>){return this.store(args[1]).write(...args);}
   override async remove(id:string){return this.store(id).remove(id);}
 }
-export async function tusRoutes(app:FastifyInstance){
+export type UploadPolicy={path:string;authenticate:(headers:Headers)=>Promise<{id:string;role:string}>;authorize:(headers:Headers,c:import('pg').PoolClient,n:import('../../modules/storage/service').Node)=>Promise<void>};
+export async function tusRoutes(app:FastifyInstance,options:{policy?:UploadPolicy}={}){
+  const policy=options.policy;
+  const uploadPath=policy?.path??'/api/storage/uploads';
+  async function identify(headers:Headers){const u=policy?await policy.authenticate(headers):await actor(headers);if(!policy)adminOnly(u);return u;}
   const store=new MountedFileStore();
-  const tus=new Server({path:'/api/storage/uploads',datastore:store,locker:new UploadLocker(),maxSize:maxUploadSize,relativeLocation:true,disableTerminationForFinishedUploads:true,
+  const tus=new Server({path:uploadPath,datastore:store,locker:new UploadLocker(),maxSize:maxUploadSize,relativeLocation:true,disableTerminationForFinishedUploads:true,
     namingFunction:async(req,metadata)=>{
-      const u=await actor(req.headers);adminOnly(u);const id=uuid.parse(metadata?.nodeId);
-      await transaction(async c=>{const n=await node(c,id);await access(c,n.space_id,id,u,true);if(n.created_by!==u.id||n.state!=='uploading')throw new HttpError(403,'Загрузка недоступна');const rawLength=req.headers.get('upload-length');const length=Number(rawLength);if(!rawLength||!/^(0|[1-9]\d*)$/.test(rawLength)||!Number.isSafeInteger(length)||length!==Number(n.size))throw new HttpError(400,'Неверный размер файла');});return id;
+      const u=await identify(req.headers);const id=uuid.parse(metadata?.nodeId);
+      await transaction(async c=>{const n=await node(c,id);if(policy)await policy.authorize(req.headers,c,n);await access(c,n.space_id,id,u,true);if(n.created_by!==u.id||n.state!=='uploading')throw new HttpError(403,'Загрузка недоступна');const rawLength=req.headers.get('upload-length');const length=Number(rawLength);if(!rawLength||!/^(0|[1-9]\d*)$/.test(rawLength)||!Number.isSafeInteger(length)||length!==Number(n.size))throw new HttpError(400,'Неверный размер файла');});return id;
     },
     onIncomingRequest:async(req,id)=>{
-      if(!['HEAD','OPTIONS'].includes(req.method))checkOrigin(req);const u=await actor(req.headers);adminOnly(u);
-      if(id)await transaction(async c=>{const n=await node(c,uuid.parse(id));await access(c,n.space_id,id,u,true);if(n.created_by!==u.id||!['uploading','processing','ready'].includes(n.state))throw new HttpError(404,'Загрузка не найдена');await store.prepare(id,n.space_id,c);if(req.method==='HEAD'&&n.state==='uploading'){const saved=await store.getUpload(id);if(saved.size===saved.offset){await c.query("update storage_node set state='processing' where id=$1",[id]);await enqueue(c,'storage-finalize',id);}}});
+      if(!policy&&!['HEAD','OPTIONS'].includes(req.method))checkOrigin(req);const u=await identify(req.headers);
+      if(id)await transaction(async c=>{const n=await node(c,uuid.parse(id));if(policy){await policy.authorize(req.headers,c,n);if(req.method==='PATCH'&&n.state!=='uploading')throw new HttpError(409,'Загрузка уже завершена');}await access(c,n.space_id,id,u,true);if(n.created_by!==u.id||!['uploading','processing','ready'].includes(n.state))throw new HttpError(404,'Загрузка не найдена');await store.prepare(id,n.space_id,c);if(req.method==='HEAD'&&n.state==='uploading'){const saved=await store.getUpload(id);if(saved.size===saved.offset){await c.query("update storage_node set state='processing' where id=$1",[id]);await enqueue(c,'storage-finalize',id);}}});
       if(req.method==='DELETE')throw new HttpError(405,'Используйте отмену загрузки');
     },
     onUploadFinish:async(_req,upload)=>{
@@ -73,7 +77,7 @@ export async function tusRoutes(app:FastifyInstance){
   });
   app.removeAllContentTypeParsers();
   app.addContentTypeParser('*',(req,_payload,done)=>done(null,req.raw));
-  for(const url of ['/api/storage/uploads','/api/storage/uploads/:uploadId'])app.route({method:['POST','PATCH','HEAD','OPTIONS','DELETE'],url,handler:async(req,reply)=>{
+  for(const url of [uploadPath,`${uploadPath}/:uploadId`])app.route({method:['POST','PATCH','HEAD','OPTIONS','DELETE'],url,handler:async(req,reply)=>{
     const init:RequestInit&{duplex?:string}={method:req.method,headers:fromNodeHeaders(req.headers)};
     if(['POST','PATCH'].includes(req.method)){init.body=Readable.toWeb(req.raw) as ReadableStream<Uint8Array>;init.duplex='half';}
     const response=await uploadStores.run(new Map(),()=>tus.handleWeb(new Request(new URL(req.url,process.env.APP_URL),init)));

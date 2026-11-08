@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./materials";
 export * from "./messages";
 export * from "./email";
 export * from "./stickers";

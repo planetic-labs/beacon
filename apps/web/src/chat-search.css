@@ -1,0 +1,18 @@
+.conversation-search { display:none; position:absolute; inset:0; z-index:25; pointer-events:none; }
+.workspace.in-chat-search > .conversation-search { display:block; }
+.conversation-search-header { position:absolute; top:8px; left:10px; right:10px; display:flex; gap:6px; pointer-events:auto; }
+.conversation-search-header button,.conversation-search-footer button { display:grid; place-items:center; flex-shrink:0; border:0; background:#fff; color:var(--ink); border-radius:50%; width:46px; height:46px; padding:10px; }
+.conversation-search-back,.conversation-search-input,.conversation-search-footer { box-shadow:0 3px 14px #17243b10; }
+.conversation-search-input { display:flex; align-items:center; min-width:0; flex:1; border-radius:28px; background:#fff; padding-left:14px; }
+.conversation-search-input input { min-width:0; flex:1; width:100%; padding:10px 0; background:transparent; color:var(--ink); border:0; outline:0; font-size:17px; }
+.conversation-search-input input::-webkit-search-cancel-button { -webkit-appearance:none; }
+.conversation-search-input:focus-within { box-shadow:0 0 0 1px #c8d5f5; }
+.conversation-search-footer { pointer-events:auto; position:absolute; bottom:calc(10px + env(safe-area-inset-bottom)); left:10px; right:10px; border-radius:30px; padding:4px 5px 4px 18px; display:flex; align-items:center; gap:4px; background:#fff; }
+.conversation-search-footer [role=status] { min-width:0; flex:1; font-size:13px; color:#7b8493; }
+.conversation-search-footer button { width:42px; height:42px; }
+.conversation-search-footer button:disabled { opacity:.35; }
+.conversation-search-error { pointer-events:auto; position:absolute; bottom:78px; left:12px; right:12px; background:#fff1f1; color:#a3333d; border-radius:16px; padding:12px; font-size:13px; }
+.app[data-device=mobile] .workspace.in-chat-search > .chat-header,
+.app[data-device=mobile] .workspace.in-chat-search > .pinned-strip,
+.app[data-device=mobile] .workspace.in-chat-search .composer-dock { display:none; }
+.app[data-device=mobile] .workspace.in-chat-search .feed { padding-top:70px; padding-bottom:82px; }

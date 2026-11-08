@@ -1,0 +1,1 @@
+ALTER TABLE "material_playlist" ADD COLUMN "enabled" boolean DEFAULT false NOT NULL;

@@ -220,3 +220,10 @@ A bulk deletion increments the chat's `history_revision`. API history/snapshots
 carry that revision. Clients invalidate loaded and cached history on a revision
 change and reject delayed snapshots from an older revision. Cached revisions are
 monotonic so a delayed chat-list response cannot restore deleted payloads.
+
+## Speech transcription
+
+The server-only `TranscriptionProvider` contract isolates recognition vendors from
+recording and chat code. An optional Groq adapter is exposed through the
+authenticated `/api/transcriptions` endpoint. See [the transcription boundary](transcription.md)
+for configuration, processing limits and draft behavior.

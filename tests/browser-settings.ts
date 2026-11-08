@@ -19,43 +19,27 @@ try{
   await context.route("**/socket.io/**",route=>route.abort());
   await context.route("**/api/**",async route=>{
    const path=new URL(route.request().url()).pathname;
-   const value=path==="/api/v1/admin/groups"?(width===1440?[{id:"019a0000-0000-7000-8000-000000000002",name:"Редакторы",code:"editors",members:[me.id]}]:[]):path==="/api/v1/me"?me:path==="/api/v1/users"?[me]:path==="/api/push"?{configured:false,enabled:true,showPreview:false,publicKey:null,mutedChatIds:[]}:[];
+   const value=path==="/api/materials"?{materials:[],playlists:[]}:path==="/api/v1/admin/groups"?(width===1440?[{id:"019a0000-0000-7000-8000-000000000002",name:"Редакторы",code:"editors",members:[me.id]}]:[]):path==="/api/v1/me"?me:path==="/api/v1/users"?[me]:path==="/api/push"?{configured:false,enabled:true,showPreview:false,publicKey:null,mutedChatIds:[]}:[];
    await route.fulfill({json:value});
   });
   await page.goto(base);await expect(page.getByRole("heading",{name:"Чаты",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Меню списка чатов",exact:true}).click();
+  for(const label of ["Создать группу","Избранное"]){const item=page.getByRole("menuitem",{name:label,exact:true});await expect(item).toBeVisible();await expect(item.locator("svg")).toHaveCount(1);}
+  await page.keyboard.press("Escape");
+  await page.goto(base+"/settings/stickers");
+  await expect(page).toHaveURL(base+"/more/stickers");
+  await expect(page.getByRole("heading",{name:"Мои наборы стикеров",exact:true})).toBeVisible();
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-stickers-${role}-${width}.png`});
+  await page.goto(base);
   const navigation=width>780?page.locator(".nav-rail"):page.getByRole("navigation",{name:"Навигация",exact:true});
-  if(role === "admin"){
   await navigation.getByRole("button",{name:"Материалы",exact:true}).click();
   await expect(page).toHaveURL(`${base}/materials`);
-  await expect(page.getByRole("region",{name:"Продолжить просмотр",exact:true})).toBeVisible();
-  await expect(page.locator(".mv-video-grid .mv-video")).toHaveCount(9);
-  const headerTop=await page.locator(".mv-topbar").evaluate(element=>element.getBoundingClientRect().top);
-  const contentTop=await page.locator(".mv-content").evaluate(element=>element.getBoundingClientRect().top);
-  await page.locator(".mv-main").evaluate(element=>{element.scrollTop=200;});
-  await expect.poll(()=>page.locator(".mv-topbar").evaluate(element=>element.getBoundingClientRect().top)).toBe(headerTop);
-  await expect.poll(()=>page.locator(".mv-content").evaluate(element=>element.getBoundingClientRect().top)).toBeLessThan(contentTop);
-  await page.locator(".mv-main").evaluate(element=>{element.scrollTop=0;});
-  await page.getByRole("button",{name:"Смотреть «Цветы крупным планом · тест плеера»",exact:true}).click();
-  const playerDialog=page.getByRole("dialog",{name:"Цветы крупным планом · тест плеера",exact:true});
-  await expect(playerDialog.locator("video")).toBeVisible();
-  await playerDialog.locator("video").evaluate((video:HTMLVideoElement)=>video.play());
-  await expect.poll(()=>playerDialog.locator("video").evaluate((video:HTMLVideoElement)=>video.currentTime)).toBeGreaterThan(0);
-  await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-material-player-${role}-${width}.png`});
-  await page.keyboard.press("Escape");
-  await expect(playerDialog).toHaveCount(0);
-  await expect(page.getByRole("button",{name:"Добавить материал",exact:true})).toBeDisabled();
-  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),"materials overview has no horizontal overflow");
-  await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-materials-${role}-${width}.png`});
-  if(width<=780)await page.getByRole("button",{name:"Открыть меню материалов",exact:true}).click();
-  await page.getByRole("navigation",{name:"Плейлисты",exact:true}).getByRole("button",{name:/Мир океана/}).click();
-  await expect(page.getByRole("region",{name:"Продолжить просмотр",exact:true})).toHaveCount(0);
-  await expect(page.locator(".mv-heading")).toContainText("Мир океана");
-  await expect(page.locator(".mv-video-grid .mv-video")).toHaveCount(2);
-  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),"materials playlist has no horizontal overflow");
-  await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-materials-playlist-${role}-${width}.png`});
-  await page.reload();await expect(page.locator(".mv-main")).toBeVisible();
+  await expect(page.getByText("Здесь будут ваши материалы",{exact:true})).toBeVisible();
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   if(width<=780)await page.getByRole("button",{name:"Назад к чатам",exact:true}).click();
   else await page.locator(".nav-rail").getByRole("button",{name:"Чаты",exact:true}).click();
+  if(role === "admin"){
   await navigation.getByRole("button",{name:"Хранилище",exact:true}).click();
   await expect(page).toHaveURL(`${base}/storage`);
   await expect(page.locator(".ss-main").getByRole("heading",{name:"Все файлы",exact:true})).toBeVisible();
@@ -74,9 +58,9 @@ try{
   if(width<=780)await page.getByRole("navigation",{name:"Навигация",exact:true}).getByRole("button",{name:"Чаты",exact:true}).click();
   else await page.locator(".nav-rail").getByRole("button",{name:"Чаты",exact:true}).click();
   }else{
-   await expect(navigation.getByRole("button",{name:"Материалы",exact:true})).toHaveCount(width<=780?1:0);
+   await expect(navigation.getByRole("button",{name:"Материалы",exact:true})).toHaveCount(1);
    await expect(navigation.getByRole("button",{name:"Хранилище",exact:true})).toHaveCount(width<=780?1:0);
-   for(const path of ["/storage","/materials"]){await page.goto(base+path);await expect(page).toHaveURL(base+"/");await expect(page.locator(".ss-main,.mv-main")).toHaveCount(0);}
+   for(const path of ["/storage"]){await page.goto(base+path);await expect(page).toHaveURL(base+"/");await expect(page.locator(".ss-main,.mv-main")).toHaveCount(0);}
   }
   if(role==="admin"){
    if(width<=780){await navigation.getByRole("button",{name:"Ещё",exact:true}).click();await page.locator(".more-links").getByRole("button",{name:"Администрирование",exact:true}).click();}else await navigation.getByRole("button",{name:"Администрирование",exact:true}).click();
@@ -85,7 +69,7 @@ try{
    if(width<=780){await page.getByRole("button",{name:"Назад к разделам",exact:true}).click();await page.getByRole("button",{name:"Назад в Ещё",exact:true}).click();await navigation.getByRole("button",{name:"Чаты",exact:true}).click();}
   }
   if(width<=780){await navigation.getByRole("button",{name:"Ещё",exact:true}).click();await page.locator(".more-links").getByRole("button",{name:"Настройки",exact:true}).click();}else await navigation.getByRole("button",{name:"Настройки",exact:true}).click();await expect(page).toHaveURL(`${base}/settings`);
-  const sections=page.getByRole("navigation",{name:"Разделы настроек",exact:true});await expect(sections).toBeVisible();
+  const sections=page.getByRole("navigation",{name:"Разделы настроек",exact:true});await expect(sections).toBeVisible();await expect(sections.getByRole("button",{name:"Стикеры",exact:true})).toHaveCount(0);
   if(width>780){
    await expect(page.locator(".settings")).toBeVisible();
    const columns=await page.locator(".admin-shell").evaluate(node=>getComputedStyle(node).gridTemplateColumns.split(" "));assert.equal(columns.length,3);

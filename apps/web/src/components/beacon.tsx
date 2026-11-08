@@ -1,3 +1,4 @@
+import {ChatInfo} from "./chat-info";
 import {Calls,startPersonalCall} from "./calls";
 import { Phone, Video } from "lucide-react";
 import {SelectableChatRow} from "./chat-list-selection";
@@ -5,7 +6,7 @@ import {ChatListActions,ChatSelectionBadge} from "./chat-list-actions";
 import {useTouchSwipe} from "./touch-swipe";
 import {useChatFolders,FolderTabs,FolderSettings} from "./chat-folders";
 import {ActionMenu} from "./action-menu";
-import { X, Reply, Forward, Copy, Trash2, MoreHorizontal, ChevronRight } from "lucide-react";
+import { X, Reply, Forward, Copy, Trash2, MoreHorizontal, ChevronRight, ShieldCheck } from "lucide-react";
 import { MobileInteractions } from "./interaction-context";
 import { Form } from "react-aria-components";
 import { ActionPanel } from "./action-panel";
@@ -30,6 +31,8 @@ import { PinnedMessages } from "./pins";
 import { AttachmentUpload } from "./attachment-upload";
 import { attachmentLimits, type AttachmentKind } from "@beacon/shared";
 import { SearchPanel } from "./search";
+import { ChatSearch } from "./chat-search";
+import { chatDate } from "../lib/chat-date";
 import { useChatFeatures, DeliveryStatus, MentionSuggestions } from "./chat-features";
 import { moveMentions, type Mention, type SearchHit, normalizeEmail, stickerSuggestionQuery, type Sticker, type RecordingKind } from "@beacon/shared";
 import {
@@ -54,7 +57,7 @@ import { renderMessage } from "./message-types";
 
 import type { User, Chat, Message, Pending, Group, OfflineSnapshot } from "@beacon/shared";
 import { api, ApiError, Avatar, Field, AvatarPicker, Dialog } from "./ui";
-import { Profile, Security, NewChat, UserForm, MembershipForm } from "./forms";
+import { Profile, Security, NewGroupChat, UserForm, MembershipForm } from "./forms";
 import { PushSettings, ChatPushToggle, forgetPushDevice, pushWorker, syncPushDevice } from "./push-settings";
 export function Beacon(): ReactNode {
   const appFrame=useRef<HTMLDivElement>(null);
@@ -74,13 +77,13 @@ export function Beacon(): ReactNode {
     let frame=0;
     const update=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{
       if(viewport.scale!==1)return;
-      appFrame.current?.style.setProperty("--visible-height",`${viewport.height}px`);
-      appFrame.current?.style.setProperty("--visible-top",`${viewport.offsetTop}px`);
+      document.documentElement.style.setProperty("--visible-height",`${viewport.height}px`);
+      document.documentElement.style.setProperty("--visible-top",`${viewport.offsetTop}px`);
     });};
     update();viewport.addEventListener("resize",update);viewport.addEventListener("scroll",update);
     return ()=>{cancelAnimationFrame(frame);viewport.removeEventListener("resize",update);viewport.removeEventListener("scroll",update);};
   },[]);
-  const [photoView,setPhotoView]=useState<PhotoTarget|null>(null),[attachmentsOpen,setAttachmentsOpen]=useState(false),[readDetails,setReadDetails]=useState<Message|null>(null);
+  const [photoView,setPhotoView]=useState<PhotoTarget|null>(null),[attachmentsOpen,setAttachmentsOpen]=useState(false),[chatInfoOpen,setChatInfoOpen]=useState(false),[readDetails,setReadDetails]=useState<Message|null>(null);
   const [selectionMode,setSelectionMode]=useState(false),[selectedMessages,setSelectedMessages]=useState<string[]>([]);
   const [forwardSources,setForwardSources]=useState<Message[]>([]),[pinsRevision,setPinsRevision]=useState(0);
   const [attachment,setAttachment]=useState<{file:File;kind:AttachmentKind;chatId:string}|null>(null);
@@ -89,6 +92,8 @@ export function Beacon(): ReactNode {
   const attachmentInput=useRef<HTMLInputElement>(null);
   const [searchRevision,setSearchRevision]=useState(0);
   const [searchOpen,setSearchOpen] = useState(false);
+  const [inChatSearch,setInChatSearch]=useState<string|null>(null);
+  const searchReturnChat=useRef<string|null>(null);
   const [searchScope,setSearchScope] = useState<{id:string;name:string}|undefined>(undefined);
   const [composerState] = useState(createComposerState);
   const setMentionCursor = composerState.cursor;
@@ -119,11 +124,12 @@ export function Beacon(): ReactNode {
     [me, setMe] = useState<User | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
-  const requestedSection = (pathname === "/settings" || pathname.startsWith("/settings/")) ? "profile" : pathname === "/admin" || pathname.startsWith("/admin/") ? "admin" : pathname === "/storage" ? "storage" : pathname === "/materials" ? "materials" : pathname === "/more" ? "more" : pathname === "/home" ? "home" : "chats";
-  const section = me?.role !== "admin" && (requestedSection === "storage" || requestedSection === "materials") ? "chats" : requestedSection;
+  const requestedSection = (pathname === "/settings" || pathname.startsWith("/settings/")) ? "profile" : pathname === "/admin" || pathname.startsWith("/admin/") ? "admin" : pathname === "/storage" ? "storage" : (pathname === "/materials" || pathname.startsWith("/materials/")) ? "materials" : (pathname === "/more" || pathname.startsWith("/more/")) ? "more" : pathname === "/home" ? "home" : "chats";
+  const adminOnlySection = requestedSection === "storage" || requestedSection === "home";
+  const section = me?.role !== "admin" && adminOnlySection ? "chats" : requestedSection;
   useEffect(() => {
-    if(me && me.role!=="admin" && (requestedSection==="storage"||requestedSection==="materials"))void navigate({to:"/",search:{},replace:true});
-  },[me?.role,requestedSection,navigate]);
+    if(me && me.role!=="admin" && adminOnlySection)void navigate({to:"/",search:{},replace:true});
+  },[me?.role,adminOnlySection,navigate]);
   const adminSections = [
     { path: "/admin/users", title: "Пользователи", icon: "profile" },
     { path: "/admin/stickers", title: "Стикеры", icon: "sticker" },
@@ -139,7 +145,6 @@ export function Beacon(): ReactNode {
     {path:"/settings/profile",title:"Профиль",icon:"profile"},
     {path:"/settings/security",title:"Ключи доступа",icon:"key"},
     {path:"/settings/notifications",title:"Push-уведомления",icon:"bell"},
-    {path:"/settings/stickers",title:"Стикеры",icon:"sticker"},
     {path:"/settings/folders",title:"Папки чатов",icon:"chats"},
     {path:"/settings/data",title:"Данные на устройстве",icon:"storage"},
     {path:"/settings/about",title:"О приложении",icon:"info"},
@@ -151,7 +156,7 @@ export function Beacon(): ReactNode {
   const adminPage = adminSections.find(item => item.path === pathname) ?? adminSections[0];
   const sectionRoutes = { chats: "/", admin: "/admin", profile: "/settings", storage: "/storage", materials: "/materials", more: "/more", home: "/home" } as const;
   const setSection = (value: keyof typeof sectionRoutes) => { draftSync.current.flush(); void navigate({ to: sectionRoutes[value], search: {} }); };
-  const closeChat = () => { draftSync.current.flush(); setSelected(null); selectedRef.current = null; void navigate({ to: "/", search: {} }); };
+  const closeChat = () => { draftSync.current.flush(); setInChatSearch(null); setSelected(null); selectedRef.current = null; void navigate({ to: "/", search: {} }); };
   const [email, setEmail] = useState(""),
     [code, setCode] = useState(""),
     [step, setStep] = useState<"email" | "code">("email"),
@@ -525,7 +530,7 @@ export function Beacon(): ReactNode {
     }
     if(target&&messages.some(m=>m.id===target.id&&m.type==="deleted")){setTarget(null);setModal(null);}
   },[messages,context,target]);
-  useEffect(()=>{setPhotoView(null);setAttachmentsOpen(false);setReadDetails(null);},[me?.id]);
+  useEffect(()=>{setPhotoView(null);setAttachmentsOpen(false);setChatInfoOpen(false);setReadDetails(null);},[me?.id]);
   useOfflineSync(me?.id,section==="chats"?selected:null,socket);
   useEffect(()=>{
     const root=document.documentElement;
@@ -725,7 +730,8 @@ export function Beacon(): ReactNode {
       setBusy(false);
     }
   }
-  useEffect(() => { setPhotos([]); setRecordingKind(null); setAttachment(null);setDeleting(null);setBatchDeleting(null);setSelectionMode(false);setSelectedMessages([]);setForwardSources([]);setPhotoView(null);setAttachmentsOpen(false);setReadDetails(null); }, [selected]);
+  useEffect(()=>{if(section!=="chats")setRecordingKind(null);},[section]);
+  useEffect(() => { setPhotos([]); setRecordingKind(null); setAttachment(null);setDeleting(null);setBatchDeleting(null);setSelectionMode(false);setSelectedMessages([]);setForwardSources([]);setPhotoView(null);setAttachmentsOpen(false);setChatInfoOpen(false);setReadDetails(null); }, [selected]);
   async function submitMessage(e: FormEvent) {
     e.preventDefault();
     if (!selected || (!draftValue.current.trim() && !photos.length) || busy || queueReady!==me?.id) return;
@@ -866,10 +872,19 @@ export function Beacon(): ReactNode {
     requestAnimationFrame(()=>{textarea.current?.focus();textarea.current?.setSelectionRange(position,position);});
   }
   function beginSearch(scope?:{id:string;name:string}) {
+    if(device==="mobile"&&scope&&selectedRef.current===scope.id){setInChatSearch(scope.id);return;}
+    searchReturnChat.current=selectedRef.current;
     setSearchScope(scope);setSearchOpen(true);if(section!=="chats")setSection("chats");
     if(device==="mobile")closeChat();
   }
+  function closeSearch() {
+    setSearchOpen(false);
+    if(device==="mobile"&&!selectedRef.current&&searchReturnChat.current)openChat(searchReturnChat.current);
+    searchReturnChat.current=null;
+  }
   const current = chats.find((c) => c.id === selected);
+  const inChatSearchActive=device==="mobile"&&!!selected&&inChatSearch===selected;
+  useEffect(()=>{setInChatSearch(active=>selected&&active===selected?active:null);},[selected]);
   // Unrelated list, presence and dialog updates must not recreate the entire history.
   const historyMarkup=useMemo(()=>{
 
@@ -1154,7 +1169,7 @@ export function Beacon(): ReactNode {
   }
   const nav = (
     <aside className="nav-rail" aria-label="Основная навигация">
-      <Button
+      {me.role === "admin" && <Button
         type="button"
         className={`rail-action ${section === "home" ? "active" : ""}`}
         aria-label="Главная"
@@ -1162,7 +1177,7 @@ export function Beacon(): ReactNode {
       >
         <Icon name="home" />
         <span className="rail-tooltip" aria-hidden="true">Главная</span>
-      </Button>
+      </Button>}
       <Button
         className={`rail-action ${section === "chats" ? "active" : ""}`}
         onClick={() => {setSearchOpen(false);setSection("chats");}}
@@ -1176,7 +1191,7 @@ export function Beacon(): ReactNode {
         ["materials", "Материалы"],
         ["navigator", "Навигатор"],
         ["storage", "Хранилище"],
-      ] as const).filter(([icon]) => me.role === "admin" || (icon !== "storage" && icon !== "materials")).map(([icon, label]) => (
+      ] as const).filter(([icon]) => me.role === "admin" || icon !== "storage").map(([icon, label]) => (
         <Button
           key={icon}
           className={`rail-action ${(icon === "storage" && section === "storage") || (icon === "materials" && section === "materials") ? "active" : ""}`}
@@ -1210,9 +1225,9 @@ export function Beacon(): ReactNode {
     </aside>
   );
   const mobileNavigation = (
-    <nav className="mobile-bottom" aria-label="Навигация" style={{gridTemplateColumns:"repeat(5, minmax(0, 1fr))"}}>
-      <Button className={section==="home"?"active":undefined} aria-current={section==="home"?"page":undefined} onClick={()=>setSection("home")}><Icon name="home"/><span>Главная</span></Button>
-      <Button className={section==="materials"?"active":undefined} aria-current={section==="materials"?"page":undefined} onClick={()=>me.role==="admin"?setSection("materials"):setUpcomingService("Материалы")}><Icon name="materials"/><span>Материалы</span></Button>
+    <nav className="mobile-bottom" aria-label="Навигация" style={{gridTemplateColumns:`repeat(${me.role==="admin"?5:4}, minmax(0, 1fr))`}}>
+      {me.role==="admin"&&<Button className={section==="home"?"active":undefined} aria-current={section==="home"?"page":undefined} onClick={()=>setSection("home")}><Icon name="home"/><span>Главная</span></Button>}
+      <Button className={section==="materials"?"active":undefined} aria-current={section==="materials"?"page":undefined} onClick={()=>setSection("materials")}><Icon name="materials"/><span>Материалы</span></Button>
       <Button className={section==="chats"?"active":undefined} aria-current={section==="chats"?"page":undefined} onClick={()=>{setSearchOpen(false);setSection("chats");}}><Icon name="chats"/><span>Чаты</span></Button>
       <Button className={section==="storage"?"active":undefined} aria-current={section==="storage"?"page":undefined} onClick={()=>me.role==="admin"?setSection("storage"):setUpcomingService("Хранилище")}><Icon name="storage"/><span>Хранилище</span></Button>
       <Button className={section==="more"||section==="profile"||section==="admin"?"active":undefined} aria-current={section==="more"||section==="profile"||section==="admin"?"page":undefined} onClick={()=>setSection("more")}><MoreHorizontal/><span>Ещё</span></Button>
@@ -1259,18 +1274,17 @@ export function Beacon(): ReactNode {
     <MobileInteractions.Provider value={device==="mobile"}><div ref={appFrame} className="app" data-device={device}>
       {toast}
       <Calls key={me.id} userId={me.id} notify={notify}/>
-      {section === "home" ? <div className="home-shell">{nav}<Home name={me.firstName} chats={()=>setSection("chats")} saved={()=>void openSaved()} materials={()=>me.role==="admin"?setSection("materials"):setUpcomingService("Материалы")} storage={()=>me.role==="admin"?setSection("storage"):setUpcomingService("Хранилище")}/>{mobileNavigation}</div> : section === "more" ? <div className="more-shell">{nav}<main className="more-main">
-        <h1>Ещё</h1>
-        <Button className="more-profile" onClick={()=>void navigate({to:"/settings/profile",search:{}})}><Avatar name={me.name} image={me.image}/><span><strong>{me.name}</strong><small>Мой профиль</small></span><ChevronRight/></Button>
+      {section === "home" ? <div className="home-shell">{nav}<Home key={me.id} name={me.firstName} chats={()=>setSection("chats")} saved={()=>void openSaved()} materials={()=>setSection("materials")} storage={()=>me.role==="admin"?setSection("storage"):setUpcomingService("Хранилище")}/>{mobileNavigation}</div> : section === "more" && pathname === "/more/stickers" ? <div className="more-shell administration-shell personal-stickers-shell">{nav}<main className="more-main"><header className="admin-header"><Button className="icon-button" aria-label="Назад в Ещё" onClick={()=>setSection("more")}><Icon name="back"/></Button><div className="admin-title"><h1>Мои стикеры</h1></div></header><div className="settings-main"><StickerAdmin key="mine" scope="mine" notify={notify}/></div></main>{mobileNavigation}</div> : section === "more" ? <div className="more-shell">{nav}<main className="more-main">
+        <header className="more-profile"><Avatar name={me.name} image={me.image}/><h1>{me.name}</h1></header>
         <nav className="more-links" aria-label="Дополнительные разделы">
-          <Button onClick={()=>void navigate({to:"/settings/stickers",search:{}})}><Icon name="sticker"/><span>Мои стикеры</span><ChevronRight/></Button>
+          <Button onClick={()=>void navigate({to:"/more/stickers",search:{}})}><Icon name="sticker"/><span>Мои стикеры</span><ChevronRight/></Button>
           <Button onClick={()=>setSection("profile")}><Icon name="settings"/><span>Настройки</span><ChevronRight/></Button>
-          {me.role==="admin"&&<Button onClick={()=>setSection("admin")}><Icon name="settings"/><span>Администрирование</span><ChevronRight/></Button>}
+          {me.role==="admin"&&<Button onClick={()=>setSection("admin")}><ShieldCheck/><span>Администрирование</span><ChevronRight/></Button>}
         </nav>
-      </main>{mobileNavigation}</div> : section === "materials" ? <div className="materials-shell">{nav}<Materials back={() => setSection("chats")} />{mobileNavigation}</div> : section === "storage" ? <div className="storage-shell">{nav}<Storage />{mobileNavigation}</div> : section === "chats" ? (
+      </main>{mobileNavigation}</div> : section === "materials" ? <div className="materials-shell">{nav}<Materials key={me.id} admin={me.role==="admin"} back={() => setSection("chats")} />{mobileNavigation}</div> : section === "storage" ? <div className="storage-shell">{nav}<Storage key={me.id}/>{mobileNavigation}</div> : section === "chats" ? (
         <div className={`chat-shell ${selected ? "has-chat" : ""}`} data-chat-kind={current?.kind}>
           {nav}
-          {searchOpen ? <SearchPanel key={searchScope?.id??"global"} revision={searchRevision} scope={searchScope} users={users} chats={chats} openChat={openChat} openPerson={id=>void startDirectChat(id)} openMessage={hit=>void openSearchMessage(hit)} close={()=>setSearchOpen(false)}/> : <section className="chat-list">
+          {searchOpen ? <SearchPanel key={searchScope?.id??"global"} revision={searchRevision} scope={searchScope} users={users} chats={chats} openChat={openChat} openPerson={id=>void startDirectChat(id)} openMessage={hit=>void openSearchMessage(hit)} close={closeSearch}/> : <section className="chat-list">
             <header className="list-header compact-list-header">
               {selectedChatIds.length?<ChatListActions chats={chats.filter(chat=>selectedChatIds.includes(chat.id))} folders={chatFolders.folders} cancel={()=>setSelectedChatIds([])} refresh={async action=>{if(action==="delete-own"&&context?.message.authorId===me.id&&selectedChatIds.includes(context.message.chatId))cancelContext();await refreshLists();await chatFolders.refresh();}} notify={notify}/>:<>
               <h1 className="sr-only">Чаты</h1>
@@ -1278,8 +1292,8 @@ export function Beacon(): ReactNode {
               <div className="inline-actions">
                   <Button className="icon-button" aria-label="Открыть поиск" onClick={()=>beginSearch()}><Icon name="search"/></Button>
                   <ActionMenu label="Меню списка чатов" icon={<MoreHorizontal/>} triggerClassName="icon-button" className="chat-list-actions" items={[
-                    {id:"group",label:"Создать группу",action:()=>{setModal("new");}},
-                    {id:"saved",label:"Избранное",action:()=>void openSaved(),disabled:busy},
+                    {id:"group",label:"Создать группу",icon:<Icon name="users"/>,action:()=>{setModal("new");}},
+                    {id:"saved",label:"Избранное",icon:<Icon name="bookmark"/>,action:()=>void openSaved(),disabled:busy},
                   ]}/>
               </div>
               </>}
@@ -1306,12 +1320,7 @@ export function Beacon(): ReactNode {
                   </div>
                   <div className="chat-row-side">
                     <span>
-                      {c.lastAt
-                        ? new Date(c.lastAt).toLocaleTimeString("ru", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : ""}
+                      {chatDate(c.lastAt)}
                     </span>
                     {!!c.unreadMentions && <span className="unread mention-badge" title="Вас упомянули" aria-label="Вас упомянули">@</span>}
                     {c.unread > 0 && <span className="unread">{c.unread}</span>}
@@ -1356,9 +1365,11 @@ export function Beacon(): ReactNode {
               )}
             </div>
           </section>}
-          <section className="workspace">
+          <section className={`workspace ${inChatSearchActive?"in-chat-search":""} ${chatInfoOpen&&device==="desktop"?"has-chat-info":""}`}>
+            {chatInfoOpen&&device==="desktop"&&selected&&current&&<ChatInfo inline key={selected} chat={current} meId={me.id} status={presenceText(presence.people.get(current.peerId??""),presence.now)} socket={socket} close={()=>setChatInfoOpen(false)} photo={setPhotoView} jump={id=>void loadAround(selected,id).catch(notify)} manage={()=>void loadManagement(selected)} person={id=>void startDirectChat(id)} refresh={refreshLists} notify={notify}/>}
             {selected && current ? (
               <>
+                {inChatSearchActive&&<ChatSearch key={`chat-search:${selected}`} chatId={selected} jump={async hit=>{if(document.getElementById(`message-${hit.id}`))highlightMessage(hit.id);else await loadAround(selected,hit.id);}} close={()=>setInChatSearch(null)}/>}
                 <header className={`chat-header ${selectionMode?"selection-header":""}`}>
                   {selectionMode?<>
                     <Button className="selection-cancel" aria-label="Отменить выбор" onClick={cancelSelection}><X/></Button>
@@ -1375,19 +1386,20 @@ export function Beacon(): ReactNode {
                   >
                     <Icon name="back" />
                   </Button>
-                  <div className="chat-peer-pill">
+                  <Button type="button" className="chat-peer-pill chat-info-trigger" aria-label="Информация о переписке" onClick={()=>{setRecordingKind(null);if(current.kind==="saved")setAttachmentsOpen(true);else setChatInfoOpen(true);}}>
                   {current.kind==="saved"?<span className="avatar saved-avatar"><Icon name="bookmark"/></span>:<Avatar
                     name={current.name ?? "Чат"}
                     image={current.avatar}
                     extra="warm"
                   />}
                   <div className="chat-header-copy">
-                    <Button type="button" className="chat-header-title chat-attachments-title" aria-label="Вложения чата" title="Вложения чата" onClick={()=>setAttachmentsOpen(true)}><span>{current.name}</span><Icon name="file"/></Button>
+                    <span className="chat-header-title"><span>{current.name}</span></span>
                     <div className="chat-header-subtitle">
                       {current.kind==="saved"?"Личные заметки":activityText || (current.kind === "group" ? "Групповой чат" : presenceText(presence.people.get(current.peerId??""),presence.now))}
                     </div>
                   </div>
-                  </div>
+                  </Button>
+                  {device==="desktop"&&<Button className="icon-button desktop-chat-search" aria-label="Вложения чата" onClick={()=>setAttachmentsOpen(true)}><Icon name="file"/></Button>}
                   {device==="desktop"&&<Button className="icon-button desktop-chat-search" aria-label="Поиск в чате" onClick={()=>beginSearch({id:selected,name:current.name})}><Icon name="search"/></Button>}
                   {current.kind==='direct'&&device==='desktop'&&<><Button className="icon-button desktop-chat-search" aria-label="Аудиозвонок" onClick={()=>startPersonalCall(selected,'audio')}><Phone/></Button><Button className="icon-button desktop-chat-search" aria-label="Видеозвонок" onClick={()=>startPersonalCall(selected,'video')}><Video/></Button></>}
                   <ActionPanel label="Действия с чатом" icon={<Icon name="menu"/>} className="mobile-chat-actions" triggerClassName="mobile-chat-menu-trigger">
@@ -1476,7 +1488,7 @@ export function Beacon(): ReactNode {
                       ))}
                   </div>
                 </div>
-                {selectionMode?<div ref={observeComposerSize} className="composer-dock selection-dock"><div className="selection-actions" role="toolbar" aria-label="Действия с выбранными сообщениями">
+                {recordingKind==="audio"?<div ref={observeComposerSize} className="composer-dock voice-recording-dock"><RecordingDialog inline transcribed={text=>{if(selectedRef.current!==selected)return;setDraft(before=>before.trim()?`${before}\n${text}`:text);requestAnimationFrame(()=>{if(selectedRef.current===selected)textarea.current?.focus();});}} key={`${selected}:audio`} kind="audio" activity={recording} chatId={selected} replyToId={context?.kind==="reply"?context.message.id:undefined} notify={notify} close={()=>setRecordingKind(null)} sent={async chatId=>{if(selectedRef.current===chatId){setContext(null);await refreshHistory(chatId);}await refreshLists();}}/></div>:selectionMode?<div ref={observeComposerSize} className="composer-dock selection-dock"><div className="selection-actions" role="toolbar" aria-label="Действия с выбранными сообщениями">
                   <Button disabled={chosenMessages.length!==1} onClick={()=>{const message=chosenMessages[0];cancelSelection();chooseContext("reply",message);requestAnimationFrame(()=>textarea.current?.focus());}}><Reply/><span>Ответить</span></Button>
                   <Button disabled={!chosenMessages.length} onClick={()=>{setForwardSources(chosenMessages);setTarget(null);setModal("forward");}}><Forward/><span>Переслать</span></Button>
                   <Button disabled={!copyText} onClick={()=>{if(!navigator.clipboard){notify(new Error("Копирование недоступно в этом браузере"));return;}void navigator.clipboard.writeText(copyText).then(cancelSelection).catch(notify);}}><Copy/><span>Скопировать</span></Button>
@@ -1647,7 +1659,6 @@ export function Beacon(): ReactNode {
             <div className="settings-main">
               {section === "profile" ? settingsPage.path === "/settings/security" ? <Security email={me.email} notify={notify}/>
                 : settingsPage.path === "/settings/notifications" ? <PushSettings notify={notify}/>
-                : settingsPage.path === "/settings/stickers" ? <StickerAdmin key="mine" scope="mine" notify={notify}/>
                 : settingsPage.path === "/settings/folders" ? <FolderSettings folders={chatFolders.folders} chats={chats} refresh={chatFolders.refresh} notify={notify}/>
                 : settingsPage.path === "/settings/data" ? <DeviceData notify={notify}/>
                 : settingsPage.path === "/settings/about" ? <About/>
@@ -1676,7 +1687,7 @@ export function Beacon(): ReactNode {
                   </Button>
                 </>
               ) : me.role !== "admin" ? <p>Этот раздел доступен только администраторам.</p>
-              : adminPage.path === "/admin/storage" ? <StorageAdmin />
+              : adminPage.path === "/admin/storage" ? <StorageAdmin key={me.id}/>
               : adminPage.path === "/admin/stickers" ? <StickerAdmin key="all" scope="all" notify={notify} />
               : adminPage.path === "/admin/groups" ? (
                 <div className="settings-card">
@@ -1784,6 +1795,7 @@ export function Beacon(): ReactNode {
           </main>
         </div>
       )}
+      {chatInfoOpen&&device==="mobile"&&selected&&current&&<ChatInfo key={selected} chat={current} meId={me.id} status={presenceText(presence.people.get(current.peerId??""),presence.now)} socket={socket} close={()=>setChatInfoOpen(false)} photo={setPhotoView} jump={id=>void loadAround(selected,id).catch(notify)} manage={()=>void loadManagement(selected)} person={id=>void startDirectChat(id)} refresh={refreshLists} notify={notify}/>}
       {attachmentsOpen&&selected&&current&&<ChatAttachments key={selected} chatId={selected} name={current.name} socket={socket} close={()=>setAttachmentsOpen(false)} photo={setPhotoView} jump={id=>void loadAround(selected,id).catch(notify)}/>}
       {readDetails&&<ReadDetails key={readDetails.id} messageId={readDetails.id} chatId={readDetails.chatId} socket={socket} close={()=>setReadDetails(null)}/>}
       {photoView&&<PhotoViewer key={`${photoView.chatId}:${photoView.messageId}`} target={photoView} socket={socket} close={()=>setPhotoView(null)}/>}
@@ -1791,7 +1803,7 @@ export function Beacon(): ReactNode {
       {deleting&&<Dialog title="Удалить сообщение?" close={()=>{if(!deleteBusy)setDeleting(null);}}><p>Сообщение будет удалено у всех участников переписки.</p><div className="inline-actions"><Button type="button" className="primary-button" disabled={deleteBusy} onClick={()=>void removeMessage()}>{deleteBusy?"Удаляем…":"Удалить"}</Button><Button type="button" className="secondary-button" disabled={deleteBusy} onClick={()=>setDeleting(null)}>Отмена</Button></div></Dialog>}
       {emojiOpen&&selected&&section==="chats"&&<EmojiMenu userId={me.id} choose={chooseEmoji} close={()=>setEmojiOpen(false)}/>}
       {attachment&&<AttachmentUpload key={`${attachment.chatId}:${attachment.file.name}`} {...attachment} replyToId={context?.kind==="reply"?context.message.id:undefined} close={()=>setAttachment(null)} notify={notify} sent={async id=>{if(selectedRef.current===id){setContext(null);await refreshHistory(id);}await refreshLists();}}/>}
-      {recordingKind && selected && <RecordingDialog key={`${selected}:${recordingKind}`} kind={recordingKind} activity={recording} chatId={selected} replyToId={context?.kind === "reply" ? context.message.id : undefined} notify={notify} close={() => setRecordingKind(null)} sent={async chatId => {
+      {recordingKind === "circle" && selected && <RecordingDialog key={`${selected}:${recordingKind}`} kind={recordingKind} activity={recording} chatId={selected} replyToId={context?.kind === "reply" ? context.message.id : undefined} notify={notify} close={() => setRecordingKind(null)} sent={async chatId => {
         if (selectedRef.current === chatId) { setContext(null); await refreshHistory(chatId); }
         await refreshLists();
       }} />}
@@ -1802,9 +1814,8 @@ export function Beacon(): ReactNode {
         </Dialog>
       )}
       {modal === "new" && (
-        <Dialog title="Новый чат" close={() => setModal(null)}>
-          <NewChat
-            initialKind="group"
+          <NewGroupChat
+            close={()=>setModal(null)}
             users={users.filter((u) => !u.banned && u.id !== me.id)}
             done={async (id) => {
               openChat(id);
@@ -1812,7 +1823,6 @@ export function Beacon(): ReactNode {
             }}
             notify={notify}
           />
-        </Dialog>
       )}
       {modal === "reaction" && target && (
         <Dialog title="Реакция на сообщение" close={() => setModal(null)}>

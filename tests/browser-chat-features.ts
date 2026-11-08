@@ -15,9 +15,12 @@ const peer={id:id(2),name:"Тест Два",firstName:"Тест",lastName:"Дв�
 const chatId=id(3),messageId=id(4),oldId=id(5);
 const makeMessage=(mid:string,text:string,author=user.id,createdAt="2026-01-02T12:00:00.123456Z")=>({id:mid,chatId,authorId:author,authorName:author===user.id?user.name:peer.name,type:"text",content:{text},createdAt,clientMessageId:mid,reactions:[]});
 try{
- for(const width of [1440,390]){
+ for(const width of [1440,390,320]){
   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:"block"});const page=await context.newPage();const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));
+  page.on('console',event=>{if(event.type()==='error'&&event.text().includes('same key'))errors.push(event.text());});
   const scopes:(string|null)[]=[];
+  const authors:(string|null)[]=[];
+  let inlineSearch=width<780;
   let draft={text:"",mentions:[] as any[]},draftRevision=0;
   let messages=[makeMessage(messageId,"Сообщение для проверки")];let sent:any,readRequests=0,deliveryRequests=0,searches=0,aroundRequests=0;
   await context.route("**/socket.io/**",route=>route.abort());
@@ -35,11 +38,12 @@ try{
    else if(path==="/api/stickers")data=[];
    else if(path==="/api/push")data={configured:false,publicKey:null,enabled:true,showPreview:false,mutedChatIds:[]};
    else if(path==="/api/v1/search"){
-    searches++;scopes.push(url.searchParams.get("chatId"));assert.equal(url.searchParams.get("query"),"пров");
-    data={people:url.searchParams.has("chatId")?[]:[peer],chats:[],messages:[{id:oldId,chatId,chatName:"Тестовый чат",authorId:peer.id,authorName:peer.name,text:"Давняя проверка",createdAt:"2025-01-02T12:00:00.000000Z"}]};
+    searches++;scopes.push(url.searchParams.get("chatId"));authors.push(url.searchParams.get("authorId"));assert.equal(url.searchParams.get("query"),"пров");
+    if(inlineSearch){const hit=(mid:string)=>({id:mid,chatId,chatName:"Тестовый чат",authorId:peer.id,authorName:peer.name,text:"Давняя проверка",createdAt:"2025-01-02T12:00:00.000000Z"});data={people:[],chats:[],messages:url.searchParams.has("beforeId")?[hit(id(8))]:[hit(oldId),hit(id(7))],total:3,...(!url.searchParams.has("beforeId")?{next:{id:id(7),at:"2025-01-02T12:00:00.000000Z"}}:{})};}
+    else data={people:url.searchParams.has("chatId")?[]:[peer],chats:[],messages:[{id:oldId,chatId,chatName:"Тестовый чат",authorId:peer.id,authorName:peer.name,text:"Давняя проверка",createdAt:"2025-01-02T12:00:00.000000Z"}]};
    }else if(path.endsWith("/messages")){
     if(request.method()==="POST"){sent=request.postDataJSON();messages.push({...makeMessage(id(6),sent.text),content:{text:sent.text,...(sent.mentions?{mentions:sent.mentions}:{})}} as any);data={id:id(6)};}
-    else if(url.searchParams.has("aroundId")){aroundRequests++;data={messages:[makeMessage(oldId,"Давняя проверка",peer.id,"2025-01-02T12:00:00.000000Z")],hasMore:true};}
+    else if(url.searchParams.has("aroundId")){aroundRequests++;data={messages:[makeMessage(url.searchParams.get("aroundId")!,"Давняя проверка",peer.id,"2025-01-02T12:00:00.000000Z")],hasMore:true};}
     else data={messages,hasMore:false};
    }
    await route.fulfill({json:data});
@@ -57,18 +61,59 @@ try{
   await expect.poll(()=>sent?.mentions?.[0]?.userId).toBe(peer.id);assert.equal(sent.mentions[0].start,7);
   await expect(page.locator(".message-mention")).toHaveText(`@${peer.name}`);
   await chatAction(page,"Поиск в чате");
+  if(width<780){
+   const local=page.getByRole('searchbox',{name:'Поиск сообщений в чате',exact:true});
+   await local.fill('пров');await expect(page.locator('.conversation-search-footer [role=status]')).toHaveText('1 из 3');
+   await page.getByRole('button',{name:'Предыдущее найденное сообщение',exact:true}).click();await expect(page.locator('.conversation-search-footer [role=status]')).toHaveText('2 из 3');
+   await page.getByRole('button',{name:'Предыдущее найденное сообщение',exact:true}).click();await expect(page.locator('.conversation-search-footer [role=status]')).toHaveText('3 из 3');
+   await expect(page.locator(`#message-${id(8)}`)).toBeVisible();
+   await page.getByRole('button',{name:'Следующее найденное сообщение',exact:true}).click();await expect(page.locator('.conversation-search-footer [role=status]')).toHaveText('2 из 3');
+   await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-in-chat-search-${width}.png`});
+   await page.getByRole('button',{name:'Очистить поиск',exact:true}).click();await expect(local).toHaveValue('');await expect(local).toBeFocused();
+   await page.getByRole('button',{name:'Вернуться в чат',exact:true}).click();await expect(input).toBeVisible();
+   await expect(page.locator('.conversation-search')).toHaveCount(0);
+   await expect(page.locator('.workspace')).not.toHaveClass(/in-chat-search/);
+   inlineSearch=false;
+   await page.getByRole('button',{name:'Назад к списку',exact:true}).click();
+   await expect(page.locator('.conversation-search-footer')).toHaveCount(0);
+   await expect(page.locator('.workspace')).not.toHaveClass(/in-chat-search/);
+   await page.getByRole('button',{name:'Открыть поиск',exact:true}).click();
+   await page.locator('.search-filters summary').click();await page.getByRole('combobox',{name:'Переписка',exact:true}).selectOption(chatId);
+  }
+  const searchBaseline=searches,aroundBaseline=aroundRequests;
   await expect(page.getByRole("combobox",{name:"Переписка",exact:true})).toHaveValue(chatId);
   await expect(page.getByRole("combobox",{name:"Автор",exact:true})).toHaveValue("");
   const query=page.getByRole("searchbox",{name:"Поисковый запрос"});await query.fill("пров");
   await page.getByRole("button",{name:/Давняя проверка/}).click();
-  await expect(page.locator(`#message-${oldId}`)).toBeVisible();assert.equal(aroundRequests,1);
+  await expect(page.locator(`#message-${oldId}`)).toBeVisible();assert.equal(aroundRequests,aroundBaseline+1);
   await expect(page.getByRole("button",{name:"К новым сообщениям"})).toBeVisible();
-  if(width===390){await page.getByRole("button",{name:"Назад к списку",exact:true}).click();await expect(query).toBeVisible();}
-  await expect.poll(()=>searches).toBe(1);assert.deepEqual(scopes,[chatId]);
+  if(width<780){await page.getByRole("button",{name:"Назад к списку",exact:true}).click();await expect(query).toBeVisible();}
+  await expect.poll(()=>searches).toBe(searchBaseline+1);assert.deepEqual(scopes.slice(searchBaseline),[chatId]);
   await page.getByRole("combobox",{name:"Переписка",exact:true}).selectOption("");
-  await expect.poll(()=>searches).toBe(2);assert.deepEqual(scopes,[chatId,null]);
+  await expect.poll(()=>searches).toBe(searchBaseline+2);assert.deepEqual(scopes.slice(searchBaseline),[chatId,null]);
+  await expect(page.locator('.search-close svg')).toHaveClass(/lucide-x/);
+  await page.getByRole('button',{name:'Закрыть поиск',exact:true}).click();
+  await page.getByRole('button',{name:'Открыть поиск',exact:true}).click();
+  await query.fill('пров');await expect.poll(()=>searches).toBe(searchBaseline+3);assert.equal(scopes.at(-1),null);
+  await page.locator('.search-filters summary').click();
+  await expect(page.getByRole('combobox',{name:'Переписка',exact:true})).toHaveValue('');
+  await page.getByRole('combobox',{name:'Автор',exact:true}).selectOption(peer.id);
+  await expect.poll(()=>searches).toBe(searchBaseline+4);assert.equal(authors.at(-1),peer.id);
+  await page.getByRole('combobox',{name:'Переписка',exact:true}).selectOption(chatId);
+  await expect.poll(()=>searches).toBe(searchBaseline+5);assert.equal(scopes.at(-1),chatId);assert.equal(authors.at(-1),peer.id);
+  await expect(page.locator('.search-excerpt mark')).toHaveText('пров');
   assert.deepEqual(errors,[]);await expect(page.getByRole("alert")).toHaveCount(0);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),"no horizontal overflow");
-  await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-chat-features-${width}.png`,fullPage:true});await context.close();console.log(`PASS chat features ${width}px`);
+  await page.screenshot({path:`${process.env.SCREENSHOT_DIR??"/tmp"}/beacon-chat-features-${width}.png`,fullPage:true});
+  if(width<780){
+   await page.getByRole('button',{name:'Закрыть поиск',exact:true}).click();
+   const conversation=page.locator('.chat-rows .chat-row').filter({hasText:'Тестовый чат'}).first();
+   await conversation.click();await expect(page.locator('.conversation-search-footer')).toHaveCount(0);
+   await chatAction(page,'Поиск в чате');await expect(page.locator('.conversation-search-footer')).toBeVisible();
+   await page.goBack();await expect(page).toHaveURL(base+'/');
+   await expect(page.locator('.conversation-search-footer')).toHaveCount(0);
+   await conversation.click();await expect(page.locator('.conversation-search-footer')).toHaveCount(0);await expect(input).toBeVisible();
+  }
+  await context.close();console.log(`PASS chat features ${width}px`);
  }
 }finally{await browser.close();await server.close();}

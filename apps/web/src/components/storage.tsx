@@ -2,11 +2,17 @@ import { ActionMenu } from "./action-menu";
 import { Form } from "react-aria-components";
 import { OverlayDialog } from "./ui";
 import { Button } from "./app-button";
-import { useEffect, useRef, useState, type ReactNode, type FormEvent, type DragEvent } from "react";
+import { useEffect, useRef, useState, type ReactNode, type DragEvent } from "react";
 import { Clock3, Folder, FolderPlus, HardDrive, Menu, Search, Star, Trash2, Upload, X, MoreHorizontal, ChevronRight, Pause, Play, Download, RefreshCw, ChevronDown, CheckCheck } from "lucide-react";
 import { storageApi, fileLabel, uploadFile, type Space, type FileNode, type Transfer } from "./storage-api";
 import "../storage.css";
 import { StorageFileIcon } from "./storage-file-icon";
+import {useQueryClient,useQuery} from '@tanstack/react-query';
+import {useForm} from 'react-hook-form';
+import {useStorageSpaces,useStorageListing,useStorageMutation,useStorageNode,useStorageTransferStatus,storageKey} from './storage-queries';
+import {StorageCardEditor,FolderPlaylist,StorageCardPreview} from './storage-card';
+import {StoragePlaylists} from './storage-playlists';
+import {useSearch,useNavigate} from '@tanstack/react-router';
 const storageDragType='application/x-beacon-storage-node';
 const sections=[{id:'all',title:'Все файлы',icon:Folder},{id:'recent',title:'Недавние',icon:Clock3},{id:'favorites',title:'Избранное',icon:Star},{id:'trash',title:'Корзина',icon:Trash2}] as const;
 function size(value:number){return capacity(value); }
@@ -14,10 +20,18 @@ function capacity(value:number){const units=['Б','КБ','МБ','ГБ','ТБ','�
 function diskUsage(s:Space){const known=s.online!==false&&s.free!=null&&s.total!=null&&s.total>0;return{label:s.online===false?'Хранилище недоступно':known?`Свободно ${capacity(s.free!)} из ${capacity(s.total!)}`:'Нет данных об объёме',percent:known?Math.max(0,Math.min(100,Math.round((1-s.free!/s.total!)*100))):null};}
 export function Storage(){
   const [fileAction,setFileAction]=useState<{node:FileNode;kind:string}|null>(null);
-  const [spaces,setSpaces]=useState<Space[]>([]),[spaceId,setSpaceId]=useState(''),[parentId,setParentId]=useState<string|null>(null),[view,setView]=useState('all'),[menuOpen,setMenuOpen]=useState(false);
-  const [nodes,setNodes]=useState<FileNode[]>([]),[breadcrumbs,setBreadcrumbs]=useState<{id:string;name:string}[]>([]),[canWrite,setCanWrite]=useState(false),[search,setSearch]=useState(''),[error,setError]=useState(''),[loading,setLoading]=useState(true),[nextOffset,setNextOffset]=useState<number|null>(null);
+  const [cardEditor,setCardEditor]=useState<FileNode|null>(null),[folderPlaylist,setFolderPlaylist]=useState<FileNode|null>(null);
+  const routeSearch=useSearch({strict:false}),navigate=useNavigate(),requestedFile=typeof routeSearch.file==='string'&&/^[0-9a-f-]{36}$/i.test(routeSearch.file)?routeSearch.file:'';
+  const routeNode=useStorageNode(requestedFile,!!requestedFile),openedFile=useRef('');
+  const client=useQueryClient(),spacesQuery=useStorageSpaces(),mutation=useStorageMutation(),ownerScope=useRef(storageKey());
+  const spaces=spacesQuery.data??[];
+  const [chosenSpace,setSpaceId]=useState(''),[parentId,setParentId]=useState<string|null>(null),[view,setView]=useState('all'),[menuOpen,setMenuOpen]=useState(false);
+  const spaceId=spaces.some(s=>s.id===chosenSpace)?chosenSpace:spaces[0]?.id??'';
+  useEffect(()=>{if(!requestedFile){openedFile.current='';return;}if(!routeNode.data||openedFile.current===requestedFile)return;openedFile.current=requestedFile;setSpaceId(routeNode.data.space_id);setParentId(routeNode.data.parent_id);setCardEditor(routeNode.data);},[routeNode.data,requestedFile]);
+  const listing=useStorageListing(spaceId,parentId,view),{nodes,breadcrumbs,canWrite,nextOffset}=listing;
+  const [search,setSearch]=useState(''),[actionError,setError]=useState('');
+  const error=actionError||spacesQuery.error?.message||listing.error?.message||'',loading=spacesQuery.isPending||!!spaceId&&listing.isPending;
   const [selected,setSelected]=useState<FileNode|null>(null),[preview,setPreview]=useState<FileNode|null>(null),[details,setDetails]=useState<FileNode|null>(null),[transfers,setTransfers]=useState<Transfer[]>([]),[destination,setDestination]=useState<{node:FileNode;copy:boolean}|null>(null);
-  const listingKey=`${spaceId}:${parentId??''}:${view}`,listingScope=useRef(listingKey);listingScope.current=listingKey;
   const [notice,setNotice]=useState('');
   const [uploadDragging,setUploadDragging]=useState(false),[draggedId,setDraggedId]=useState<string|null>(null),[dropTarget,setDropTarget]=useState<string|null>(null),[moving,setMoving]=useState(false);
   const draggedNode=useRef<FileNode|null>(null),dragDepth=useRef(0);
@@ -49,26 +63,23 @@ export function Storage(){
     if(allowed)void droppedFiles(event.dataTransfer).then(upload).catch(e=>setError(e.message));
   }
   const [dialog,setDialog]=useState<'folder'|'upload'|'confirm-upload'|null>(null),[pendingFiles,setPendingFiles]=useState<File[]>([]);
-  const files=useRef<HTMLInputElement>(null),folders=useRef<HTMLInputElement>(null),sequence=useRef(0),active=useRef(true);
+  const files=useRef<HTMLInputElement>(null),folders=useRef<HTMLInputElement>(null),active=useRef(true);
   const currentSpace=spaces.find(s=>s.id===spaceId),title=sections.find(s=>s.id===view)?.title??'Все файлы';
-  useEffect(()=>{active.current=true;storageApi<Space[]>('/spaces').then(value=>{setSpaces(value);setSpaceId(value[0]?.id??'');if(!value.length)setLoading(false);}).catch(e=>setError(e.message));return()=>{active.current=false;};},[]);
-  async function refreshSpaces(){try{const value=await storageApi<Space[]>('/spaces');if(active.current)setSpaces(value);}catch{/* Keep the last capacity snapshot during temporary network failures. */}}
-  useEffect(()=>{const timer=setInterval(()=>{if(document.visibilityState==='visible')void refreshSpaces();},30000);const visible=()=>{if(document.visibilityState==='visible')void refreshSpaces();};document.addEventListener('visibilitychange',visible);return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',visible);};},[]);
-  async function load(quiet=false){if(!spaceId||listingScope.current!==listingKey)return;const seq=++sequence.current;if(!quiet)setLoading(true);try{const result=await storageApi<{nodes:FileNode[];breadcrumbs:{id:string;name:string}[];canWrite:boolean;nextOffset:number|null}>(`?${new URLSearchParams({spaceId,view,...(parentId?{parentId}:{})})}`);if(seq===sequence.current&&active.current&&listingScope.current===listingKey){setNodes(result.nodes);setBreadcrumbs(result.breadcrumbs);setCanWrite(result.canWrite);setNextOffset(result.nextOffset??null);}}catch(e){if(seq===sequence.current)setError((e as Error).message);}finally{if(seq===sequence.current)setLoading(false);}}
-  useEffect(()=>{setSelected(null);void load();return()=>{sequence.current++;};},[spaceId,parentId,view]);
-  useEffect(()=>{if(!nodes.some(n=>['uploading','processing','copying','purging'].includes(n.state))&&!transfers.some(t=>t.state==='processing'))return;const timer=setInterval(()=>void load(true),2000);return()=>clearInterval(timer);},[nodes,transfers,spaceId,parentId,view]);
+  useEffect(()=>{active.current=true;return()=>{active.current=false;};},[]);
+  const load=(_quiet=false)=>listing.refetch();
+  const refreshSpaces=()=>spacesQuery.refetch();
+  useEffect(()=>{setSelected(null);},[spaceId,parentId,view]);
   useEffect(()=>{if(transfers.some(t=>t.state==='processing'&&nodes.some(n=>n.id===t.id&&n.state==='ready')))void refreshSpaces();setTransfers(previous=>previous.map(t=>t.state==='processing'&&nodes.some(n=>n.id===t.id&&n.state==='ready')?{...t,state:'done'}:t));},[nodes]);
-  useEffect(()=>{
-    if(!transfers.some(t=>t.state==='processing'))return;
-    const timer=setInterval(()=>{for(const t of transfers)if(t.state==='processing')void storageApi<FileNode>(`/${t.id}`).then(n=>{if(n.state==='ready'||n.state==='error')updateTransfer({...t,state:n.state==='ready'?'done':'error'});}).catch(()=>{});},2000);
-    return()=>clearInterval(timer);
-  },[transfers]);
+  const statuses=useStorageTransferStatus(transfers);
+  const settledTransfers=statuses.map(q=>q.data).filter((n):n is FileNode=>!!n&&['ready','error'].includes(n.state));
+  const settledKey=settledTransfers.map(n=>`${n.id}:${n.state}`).join(',');
+  useEffect(()=>{for(const n of settledTransfers){const t=transfersRef.current.find(t=>t.id===n.id);if(t?.state==='processing')updateTransfer({...t,state:n.state==='ready'?'done':'error'});}},[settledKey]);
   const completedTransferIds=transfers.filter(t=>t.state==='done').map(t=>t.id).join(',');
-  useEffect(()=>{if(completedTransferIds){void load(true);void refreshSpaces();}},[completedTransferIds]);
+  useEffect(()=>{if(completedTransferIds)void client.invalidateQueries({queryKey:storageKey()});},[completedTransferIds,client]);
   function select(v:string){setView(v);setParentId(null);setMenuOpen(false);setSearch('');}
-  async function perform(run:()=>Promise<unknown>){try{setError('');await run();setSelected(null);await load(true);void refreshSpaces();}catch(e){setError((e as Error).message);}}
-  async function loadMore(){if(nextOffset===null)return;try{const result=await storageApi<{nodes:FileNode[];nextOffset:number|null}>(`?${new URLSearchParams({spaceId,view,offset:String(nextOffset),...(parentId?{parentId}:{})})}`);setNodes(old=>Array.from(new Map([...old,...result.nodes].map(n=>[n.id,n])).values()));setNextOffset(result.nextOffset);}catch(e){setError((e as Error).message);}}
-  function updateTransfer(t:Transfer){transfersRef.current=transfersRef.current.some(x=>x.id===t.id)?transfersRef.current.map(x=>x.id===t.id?t:x):[...transfersRef.current,t];if(active.current)setTransfers(old=>{const exists=old.some(item=>item.id===t.id);return exists?old.map(item=>item.id===t.id?t:item):[...old,t];});}
+  async function perform(run:()=>Promise<unknown>){try{setError('');await mutation.mutateAsync(run);setSelected(null);}catch(e){setError((e as Error).message);}}
+  async function loadMore(){if(listing.hasNextPage&&!listing.isFetchingNextPage)await listing.fetchNextPage();}
+  function updateTransfer(t:Transfer){transfersRef.current=transfersRef.current.some(x=>x.id===t.id)?transfersRef.current.map(x=>x.id===t.id?t:x):[...transfersRef.current,t];if(active.current)setTransfers(old=>{const exists=old.some(item=>item.id===t.id);return exists?old.map(item=>item.id===t.id?t:item):[...old,t];});else if(t.state!=='uploading')void client.invalidateQueries({queryKey:ownerScope.current});}
   async function upload(list:FileList|File[]|null,confirmed=false){if(!list?.length)return;setError('');
     const items=Array.from(list);if(files.current)files.current.value='';if(folders.current)folders.current.value='';
     if(items.length>1&&!confirmed){setPendingFiles(items);setDialog('confirm-upload');return;}
@@ -88,11 +99,13 @@ export function Storage(){
   const transfersRef=useRef<Transfer[]>([]);
   function open(n:FileNode){if(n.directory){setParentId(n.id);setView('all');setSearch('');}else if(n.state==='ready'){setPreview(n);}}
   async function action(n:FileNode,kind:string){
+    if(kind==='card'){setCardEditor(n);return;}
+    if(kind==='playlist'){setFolderPlaylist(n);return;}
     if(['rename','trash','purge'].includes(kind)){setFileAction({node:n,kind});return;}
     if(kind==='move'||kind==='copy'){setSelected(null);setDestination({node:n,copy:kind==='copy'});}
     if(kind==='restore')await perform(()=>storageApi(`/${n.id}/restore`,'POST'));
     if(kind==='retry')await perform(()=>storageApi(`/${n.id}/retry`,'POST'));
-    if(kind==='details'){setDetails(await storageApi<FileNode>(`/${n.id}`));setSelected(null);}
+    if(kind==='details'){setDetails(n);setSelected(null);}
   }
   const uploadBytes=transfers.reduce((sum,t)=>sum+Math.max(1,t.size),0);
   const uploadProgress=uploadBytes?Math.round(transfers.reduce((sum,t)=>sum+Math.max(1,t.size)*t.progress,0)/uploadBytes):0;
@@ -107,6 +120,7 @@ export function Storage(){
       <div className="ss-brand"><span className="ss-brand-mark"><Folder size={22}/></span>Файлы<Button className="ss-menu-close ss-icon-button" aria-label="Закрыть меню" onClick={()=>setMenuOpen(false)}><X size={20}/></Button></div>
       <div><p className="ss-side-label">Навигация</p><nav className="ss-nav-list" aria-label="Разделы хранилища">{sections.map(item=><Button key={item.id} className={`ss-nav ${view===item.id?'active':''}`} onClick={()=>select(item.id)}><item.icon size={18}/>{item.title}</Button>)}</nav></div>
       <div><p className="ss-side-label">Хранилища</p><div className="ss-nav-list">{spaces.map(s=><Button key={s.id} className={`ss-storage ${spaceId===s.id?'active':''}`} aria-label={`${s.name}: ${diskUsage(s).label}`} onClick={()=>{setSpaceId(s.id);select('all');}}><HardDrive size={18}/><span className="ss-storage-info"><span className="ss-storage-name">{s.name}</span><span className="ss-storage-sub">{diskUsage(s).label}</span><span className={`ss-storage-meter ${s.online===false?'unavailable':''}`} role={diskUsage(s).percent===null?undefined:'meter'} aria-label={`Заполненность хранилища ${s.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={diskUsage(s).percent??undefined} aria-valuetext={diskUsage(s).label}><i style={{width:`${diskUsage(s).percent??0}%`}}/></span></span></Button>)}</div></div>
+      <StoragePlaylists/>
     </aside>
     <main className={`ss-main ${uploadDragging?'ss-upload-dragging':''}`} onDragEnter={enterUploads} onDragLeave={leaveUploads} onDragOver={overUploads} onDrop={dropUploads}>
       {uploadDragging&&<div className="ss-drop-hint" role="status"><div><Upload size={24}/><strong>Отпустите файлы для загрузки</strong><span>В папку «{breadcrumbs.at(-1)?.name??currentSpace?.name}»</span></div></div>}
@@ -130,30 +144,36 @@ export function Storage(){
         {visible.map(n=><div className={`ss-file-row ${dropTarget===n.id?'ss-drop-target':''} ${draggedId===n.id?'ss-drag-source':''}`} key={n.id} onDragOver={n.directory&&n.state==='ready'?e=>dragOverFolder(e,n.id):undefined} onDragLeave={n.directory?e=>{if(!e.currentTarget.contains(e.relatedTarget as Node|null))setDropTarget(null);}:undefined} onDrop={n.directory&&n.state==='ready'?e=>void dropOnFolder(e,n.id):undefined}>
           <Button className="ss-file-name" draggable={canWrite&&view==='all'&&!moving&&n.state==='ready'} onDragStart={e=>startDrag(e,n)} onDragEnd={clearDrag} onClick={()=>open(n)} disabled={n.state!=='ready'||view==='trash'}><StorageFileIcon file={n}/><span title={fileLabel(n)}>{fileLabel(n)}<small>{n.state==='uploading'?'Ожидает загрузки':n.state==='processing'?'Обработка…':n.state==='copying'?'Копирование…':n.state==='error'?'Ошибка обработки':''}</small></span></Button>
           <span className="ss-file-date">{new Date(n.updated_at).toLocaleDateString()}</span><span className="ss-file-size">{n.directory?'—':size(n.size)}</span>
-          <div className="ss-row-actions"><Button aria-label={n.favorite?'Убрать из избранного':'В избранное'} className={`ss-icon-button ${n.favorite?'ss-starred':''}`} onClick={()=>void perform(()=>storageApi(`/${n.id}/favorite`,'POST',{favorite:!n.favorite}))}><Star size={16}/></Button><ActionMenu label={`Действия: ${fileLabel(n)}`} icon={<MoreHorizontal size={18}/>} triggerClassName="ss-icon-button" className="ss-aria-actions" items={(n.state==='error'?[['retry','Повторить операцию'],[view==='trash'?'purge':'trash',view==='trash'?'Удалить навсегда':'В корзину']]:view==='trash'?[['restore','Восстановить'],['purge','Удалить навсегда']]:[['details','Сведения'],['rename','Переименовать'],['move','Переместить'],['copy','Копировать'],['trash','В корзину']]).map(([id,label])=>({id,label,action:()=>void action(n,id)}))}/></div>
+          <div className="ss-row-actions"><Button aria-label={n.favorite?'Убрать из избранного':'В избранное'} className={`ss-icon-button ${n.favorite?'ss-starred':''}`} onClick={()=>void perform(()=>storageApi(`/${n.id}/favorite`,'POST',{favorite:!n.favorite}))}><Star size={16}/></Button><ActionMenu label={`Действия: ${fileLabel(n)}`} icon={<MoreHorizontal size={18}/>} triggerClassName="ss-icon-button" className="ss-aria-actions" items={(n.state==='error'?[['retry','Повторить операцию'],[view==='trash'?'purge':'trash',view==='trash'?'Удалить навсегда':'В корзину']]:view==='trash'?[['restore','Восстановить'],['purge','Удалить навсегда']]:[...(n.directory?[['playlist','Папка как плейлист']]:[['card','Карточка файла']]),['details','Сведения'],['rename','Переименовать'],['move','Переместить'],['copy','Копировать'],['trash','В корзину']]).map(([id,label])=>({id,label,action:()=>void action(n,id)}))}/></div>
         </div>)}
         {!visible.length&&<div className="ss-empty"><Folder size={42}/><h2>{loading?'Загружаем файлы…':!spaces.length?'Нет подключённых хранилищ':search?'Ничего не найдено':view==='trash'?'Корзина пуста':view==='favorites'?'Пока нет избранных файлов':view==='recent'?'Пока нет недавних файлов':'В этой папке пока пусто'}</h2></div>}
       {nextOffset!==null&&<Button className="ss-soft-button" onClick={()=>void loadMore()}>Показать ещё</Button>}</section>
 
     </div></main>
-    {fileAction&&<FileActionDialog node={fileAction.node} kind={fileAction.kind} close={()=>setFileAction(null)} apply={async name=>{const {node,kind}=fileAction;await storageApi(`/${node.id}${kind==='purge'?'/purge':''}`,kind==='rename'?'PATCH':kind==='purge'?'POST':'DELETE',kind==='rename'?{name}:undefined);setFileAction(null);void load(true);void refreshSpaces();}}/>}
-    {dialog==='folder'&&<CreateFolder spaceId={spaceId} parentId={parentId} close={()=>setDialog(null)} created={()=>{setDialog(current=>current==='folder'?null:current);setNotice('Папка создана');void load(true);}}/>}
+    {fileAction&&<FileActionDialog node={fileAction.node} kind={fileAction.kind} close={()=>setFileAction(null)} apply={async name=>{const {node,kind}=fileAction;await mutation.mutateAsync(()=>storageApi(`/${node.id}${kind==='purge'?'/purge':''}`,kind==='rename'?'PATCH':kind==='purge'?'POST':'DELETE',kind==='rename'?{name}:undefined));setFileAction(null);}}/>}
+    {dialog==='folder'&&<CreateFolder spaceId={spaceId} parentId={parentId} close={()=>setDialog(null)} created={()=>{setDialog(current=>current==='folder'?null:current);setNotice('Папка создана');}}/>}
     {dialog==='upload'&&<UploadDialog close={()=>setDialog(null)} chooseFiles={()=>files.current?.click()} chooseFolder={()=>folders.current?.click()} drop={data=>void droppedFiles(data).then(upload).catch(e=>setError(e.message))}/>}
     {dialog==='confirm-upload'&&<StorageDialog title="Загрузить" close={()=>{setDialog(null);setPendingFiles([]);}}><div className="ss-upload-summary"><strong>{pendingFiles.length} файлов · {size(pendingFiles.reduce((sum,f)=>sum+f.size,0))}</strong><span>Место: {currentSpace?.name}{breadcrumbs.map(p=>' / '+p.name).join('')}</span></div><p className="ss-modal-note">Структура папок сохранится. Существующие файлы не будут перезаписаны.</p><div className="ss-modal-footer"><Button className="ss-soft-button" onClick={()=>{setDialog(null);setPendingFiles([]);}}>Отмена</Button><Button className="ss-primary-button" onClick={()=>{const items=pendingFiles;setPendingFiles([]);void upload(items,true);}}>Начать загрузку</Button></div></StorageDialog>}
+    {cardEditor&&<StorageCardEditor file={cardEditor} close={()=>{setCardEditor(null);if(requestedFile)void navigate({to:'/storage',search:{},replace:true});}}/>}
+    {folderPlaylist&&<FolderPlaylist file={folderPlaylist} close={()=>setFolderPlaylist(null)}/>}
     {preview&&<Preview file={preview} close={()=>setPreview(null)}/>}
-    {details&&<OverlayDialog backdropClassName="ss-modal-backdrop" className="ss-modal" title="Сведения о файле" close={()=>setDetails(null)}><Button className="ss-modal-close" aria-label="Закрыть" onClick={()=>setDetails(null)}><X/></Button><h2>{fileLabel(details)}</h2><p>UUID: <code>{details.id}</code></p><p>{details.directory?'Папка':size(details.size)}</p>{!details.directory&&<><p>SHA-256: {details.sha256??(details.hash_state==='queued'?'Рассчитывается…':'Не рассчитан')}</p><Button className="ss-soft-button" onClick={()=>void perform(async()=>{await storageApi(`/${details.id}/hash`,'POST');setDetails(await storageApi<FileNode>(`/${details.id}`));})}>Рассчитать SHA-256</Button></>}</OverlayDialog>}
-    {destination&&<Destination spaceId={spaceId} node={destination.node} copy={destination.copy} close={()=>setDestination(null)} done={()=>{setDestination(null);void load();}}/>}
+    {details&&<FileDetails file={details} close={()=>setDetails(null)}/>}
+    {destination&&<Destination spaceId={spaceId} node={destination.node} copy={destination.copy} close={()=>setDestination(null)} done={()=>setDestination(null)}/>}
   </>;
 }
 function Preview({file,close}:{file:FileNode;close:()=>void}){
   const url=`/api/storage/content/${file.id}`;
-  const [text,setText]=useState('');useEffect(()=>{if(file.mime==='text/plain')fetch(url,{headers:{Range:'bytes=0-1048575'}}).then(r=>{if(!r.ok)throw new Error();return r.text();}).then(setText).catch(()=>setText('Не удалось загрузить текст'));},[url,file.mime]);
-  return <OverlayDialog backdropClassName="ss-modal-backdrop" className="ss-modal ss-preview" title={file.name} close={close}><Button className="ss-modal-close" aria-label="Закрыть просмотр" onClick={close}><X/></Button><h2>{file.name}</h2>{file.mime.startsWith('image/')?<img src={url} alt={file.name}/>:file.mime.startsWith('video/')?<video controls src={url}/>:file.mime.startsWith('audio/')?<audio controls src={url}/>:file.mime==='application/pdf'?<iframe title={file.name} src={url}/>:file.mime==='text/plain'?<pre>{text}</pre>:<p>Предпросмотр этого формата недоступен.</p>}<a className="ss-soft-button" href={`${url}?download=1`}><Download size={17}/>Скачать оригинал</a></OverlayDialog>;
+  const textQuery=useQuery({queryKey:[...storageKey(),'text',file.id],enabled:file.mime==='text/plain',queryFn:async({signal})=>{const r=await fetch(url,{headers:{Range:'bytes=0-1048575'},signal});if(!r.ok)throw new Error('Не удалось загрузить текст');return r.text();}}),text=textQuery.error?'Не удалось загрузить текст':textQuery.data??'';
+  return <OverlayDialog backdropClassName="ss-modal-backdrop" className="ss-modal ss-preview" title={file.name} close={close}><Button className="ss-modal-close" aria-label="Закрыть просмотр" onClick={close}><X/></Button><h2>{file.name}</h2>{file.mime.startsWith('image/')?<img src={url} alt={file.name}/>:(file.mime.startsWith('video/')||file.mime.startsWith('audio/'))?<StorageCardPreview file={file}/>:file.mime==='application/pdf'?<iframe title={file.name} src={url}/>:file.mime==='text/plain'?<pre>{text}</pre>:<p>Предпросмотр этого формата недоступен.</p>}<a className="ss-soft-button" href={`${url}?download=1`}><Download size={17}/>Скачать оригинал</a></OverlayDialog>;
+}
+function FileDetails({file,close}:{file:FileNode;close:()=>void}){
+ const query=useStorageNode(file.id),mutation=useStorageMutation(),details=query.data??file;
+ return <OverlayDialog backdropClassName="ss-modal-backdrop" className="ss-modal" title="Сведения о файле" close={close}><Button className="ss-modal-close" aria-label="Закрыть" onClick={close}><X/></Button><h2>{fileLabel(details)}</h2><p>UUID: <code>{details.id}</code></p><p>{details.directory?'Папка':size(details.size)}</p>{(query.error||mutation.error)&&<p role="alert">{(query.error||mutation.error)?.message}</p>}{!details.directory&&<><p>SHA-256: {details.sha256??(details.hash_state==='queued'?'Рассчитывается…':'Не рассчитан')}</p><Button className="ss-soft-button" disabled={mutation.isPending} onClick={()=>mutation.mutate(()=>storageApi(`/${details.id}/hash`,'POST'))}>Рассчитать SHA-256</Button></>}</OverlayDialog>;
 }
 function Destination({spaceId,node,copy,close,done}:{spaceId:string;node:FileNode;copy:boolean;close:()=>void;done:()=>void}){
- const [parent,setParent]=useState<string|null>(null),[folders,setFolders]=useState<FileNode[]>([]),[crumbs,setCrumbs]=useState<{id:string;name:string}[]>([]),[name,setName]=useState(node.name),[error,setError]=useState('');
- useEffect(()=>{let active=true;storageApi<{nodes:FileNode[];breadcrumbs:{id:string;name:string}[]}>(`?${new URLSearchParams({spaceId,...(parent?{parentId:parent}:{})})}`).then(r=>{if(active){setFolders(r.nodes.filter(n=>n.directory&&n.id!==node.id));setCrumbs(r.breadcrumbs);}}).catch(e=>setError(e.message));return()=>{active=false;};},[spaceId,parent,node.id]);
- return <OverlayDialog backdropClassName="ss-modal-backdrop" className="ss-modal" title={copy?"Копирование":"Перемещение"} close={close}><Button className="ss-modal-close" aria-label="Закрыть" onClick={close}><X/></Button><h2>{copy?'Копировать':'Переместить'} «{fileLabel(node)}»</h2><nav className="ss-breadcrumbs"><Button onClick={()=>setParent(null)}>Корень</Button>{crumbs.map(p=><Button key={p.id} onClick={()=>setParent(p.id)}>{p.name}</Button>)}</nav>{folders.map(f=><Button className="ss-nav" key={f.id} onClick={()=>setParent(f.id)}><Folder size={18}/>{fileLabel(f)}</Button>)}{copy&&<label>Название копии<input value={name} onChange={e=>setName(e.target.value)}/></label>}{error&&<p role="alert">{error}</p>}<Button className="ss-primary-button" onClick={()=>void storageApi(`/${node.id}${copy?'/copy':''}`,copy?'POST':'PATCH',{parentId:parent,name}).then(done).catch(e=>setError(e.message))}>Выбрать эту папку</Button></OverlayDialog>;
+ const [parent,setParent]=useState<string|null>(null),[name,setName]=useState(node.name),[error,setError]=useState('');
+ const listing=useStorageListing(spaceId,parent),mutation=useStorageMutation(),folders=listing.nodes.filter(n=>n.directory&&n.id!==node.id),crumbs=listing.breadcrumbs;
+ return <OverlayDialog backdropClassName="ss-modal-backdrop" className="ss-modal" title={copy?"Копирование":"Перемещение"} close={close}><Button className="ss-modal-close" aria-label="Закрыть" onClick={close}><X/></Button><h2>{copy?'Копировать':'Переместить'} «{fileLabel(node)}»</h2><nav className="ss-breadcrumbs"><Button onClick={()=>setParent(null)}>Корень</Button>{crumbs.map(p=><Button key={p.id} onClick={()=>setParent(p.id)}>{p.name}</Button>)}</nav>{folders.map(f=><Button className="ss-nav" key={f.id} onClick={()=>setParent(f.id)}><Folder size={18}/>{fileLabel(f)}</Button>)}{listing.hasNextPage&&<Button onClick={()=>void listing.fetchNextPage()}>Ещё папки</Button>}{copy&&<label>Название копии<input value={name} onChange={e=>setName(e.target.value)}/></label>}{(error||listing.error)&&<p role="alert">{error||listing.error?.message}</p>}<Button className="ss-primary-button" disabled={mutation.isPending||listing.isPending||!!listing.error} onClick={()=>void mutation.mutateAsync(()=>storageApi(`/${node.id}${copy?'/copy':''}`,copy?'POST':'PATCH',{parentId:parent,name})).then(done).catch(e=>setError(e.message))}>Выбрать эту папку</Button></OverlayDialog>;
 }
 async function droppedFiles(data:DataTransfer):Promise<File[]>{
  const result:File[]=[];
@@ -169,10 +189,8 @@ function StorageDialog({title,children,close}:{title:string;children:ReactNode;c
  return <OverlayDialog backdropClassName="ss-modal-backdrop" className="ss-action-modal" title={title} close={close}><header className="ss-modal-header"><h2>{title}</h2><Button type="button" className="ss-dialog-close" aria-label="Закрыть" onClick={close}><X size={20}/></Button></header>{children}</OverlayDialog>;
 }
 function CreateFolder({spaceId,parentId,close,created}:{spaceId:string;parentId:string|null;close:()=>void;created:()=>void}){
- const [name,setName]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');const input=useRef<HTMLInputElement>(null);
- useEffect(()=>{input.current?.focus();},[]);
- async function submit(e:FormEvent){e.preventDefault();if(busy||!name.trim())return;setBusy(true);setError('');try{await storageApi('','POST',{spaceId,parentId,name:name.trim(),directory:true});created();}catch(e){setError((e as Error).message);input.current?.focus();}finally{setBusy(false);}}
- return <StorageDialog title="Новая папка" close={close}><Form onSubmit={e=>void submit(e)}><label className="ss-field" htmlFor="ss-folder-name">Название папки</label><input ref={input} id="ss-folder-name" className="ss-text-field" placeholder="Например, Материалы" autoFocus maxLength={240} value={name} disabled={busy} onChange={e=>setName(e.target.value)}/>{error&&<p className="ss-form-error" role="alert">{error}</p>}<div className="ss-modal-footer"><Button type="button" className="ss-soft-button" onClick={close}>Отмена</Button><Button type="submit" className="ss-primary-button" disabled={busy||!name.trim()}>{busy?'Создаём…':'Создать'}</Button></div></Form></StorageDialog>;
+ const form=useForm({defaultValues:{name:''}}),mutation=useStorageMutation(),name=form.watch('name');
+ return <StorageDialog title="Новая папка" close={close}><Form onSubmit={form.handleSubmit(async({name})=>{try{await mutation.mutateAsync(()=>storageApi('','POST',{spaceId,parentId,name:name.trim(),directory:true}));created();}catch{form.setFocus('name');}})}><label className="ss-field" htmlFor="ss-folder-name">Название папки</label><input {...form.register('name',{required:true,validate:value=>!!value.trim(),maxLength:240})} id="ss-folder-name" className="ss-text-field" placeholder="Например, Материалы" autoFocus maxLength={240} disabled={mutation.isPending}/>{mutation.error&&<p className="ss-form-error" role="alert">{mutation.error.message}</p>}<div className="ss-modal-footer"><Button type="button" className="ss-soft-button" onClick={close}>Отмена</Button><Button type="submit" className="ss-primary-button" disabled={mutation.isPending||!name.trim()}>{mutation.isPending?'Создаём…':'Создать'}</Button></div></Form></StorageDialog>;
 }
 function UploadDialog({close,chooseFiles,chooseFolder,drop}:{close:()=>void;chooseFiles:()=>void;chooseFolder:()=>void;drop:(data:DataTransfer)=>void}){
  const [dragging,setDragging]=useState(false);

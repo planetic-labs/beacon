@@ -1,12 +1,13 @@
+import {X,Search,ArrowLeft,ArrowRight} from "lucide-react";
 import { Form } from "react-aria-components";
 import { Button } from "./app-button";
 import { FreshSessionRequiredError } from "../lib/passkey-error";
 import { PasskeyConfirmation } from "./passkey-confirmation";
 import { suggestPasskeyLabel } from "../lib/passkey-label";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, type KeyboardEvent } from "react";
 import { authClient, registerPasskey } from "@/auth-client";
 import type { User, Group } from "@beacon/shared";
-import { api, Avatar, Field, AvatarPicker } from "./ui";
+import { api, Avatar, Field, AvatarPicker, OverlayDialog } from "./ui";
 export function Profile({
   me,
   refresh,
@@ -186,85 +187,53 @@ export function Security({ email, notify }: { email: string | undefined; notify:
     </section>
   );
 }
-export function NewChat({
-  initialKind="direct",
-  users,
-  done,
-  notify,
-}: {
+export function NewGroupChat({users,done,notify,close}: {
   users: User[];
+  close: () => void;
   done: (id: string) => Promise<void>;
   notify: (e: unknown) => void;
-  initialKind?: "direct"|"group";
 }) {
-  const [kind, setKind] = useState(initialKind),
-    [ids, setIds] = useState<string[]>([]),
-    [busy, setBusy] = useState(false);
-  return (
-    <Form
-      className="dialog-body"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        setBusy(true);
-        const f = new FormData(e.currentTarget);
-        try {
-          const result = await api("chats", "POST", {
-            kind,
-            userIds: ids,
-            title: kind === "group" ? f.get("title") : undefined,
-          });
-          await done(result.id);
-        } catch (e) {
-          notify(e);
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      <Field label="Тип чата">
-        <select
-          value={kind}
-          onChange={(e) => {
-            setKind(e.target.value as "direct"|"group");
-            setIds([]);
-          }}
-        >
-          <option value="direct">Личная переписка</option>
-          <option value="group">Групповой чат</option>
-        </select>
-      </Field>
-      {kind === "group" && (
-        <Field label="Название">
-          <input name="title" required maxLength={120} />
-        </Field>
-      )}
-      <div className="people-options">
-        {users.map((u) => (
-          <label className="person-select" key={u.id}>
-            <input
-              type={kind === "direct" ? "radio" : "checkbox"}
-              name="person"
-              checked={ids.includes(u.id)}
-              onChange={() =>
-                setIds(
-                  kind === "direct"
-                    ? [u.id]
-                    : ids.includes(u.id)
-                      ? ids.filter((id) => id !== u.id)
-                      : [...ids, u.id],
-                )
-              }
-            />
-            <Avatar name={u.name} image={u.image} />
-            {u.name}
-          </label>
-        ))}
-      </div>
-      <Button className="primary-button" disabled={busy || !ids.length}>
-        {busy ? "Создаём…" : "Открыть чат"}
-      </Button>
-    </Form>
-  );
+  const [step,setStep]=useState<"members"|"details">("members");
+  const searchInput=useRef<HTMLInputElement>(null),retainSearch=useRef(false);
+  const [ids,setIds]=useState<string[]>([]),[query,setQuery]=useState(""),[title,setTitle]=useState(""),[busy,setBusy]=useState(false);
+  const finishInput=(event:KeyboardEvent<HTMLInputElement>)=>{
+    if(event.key!=="Enter"||event.nativeEvent.isComposing)return;
+    event.preventDefault();
+    const dialog=event.currentTarget.closest<HTMLElement>('[role="dialog"]');
+    if(dialog)dialog.focus({preventScroll:true});else event.currentTarget.blur();
+  };
+  const toggle=(id:string)=>setIds(current=>current.includes(id)?current.filter(value=>value!==id):[...current,id]);
+  const selected=ids.map(id=>users.find(user=>user.id===id)).filter((user):user is User=>!!user);
+  const available=users.filter(user=>!ids.includes(user.id));
+  const visible=available.filter(user=>user.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  return <OverlayDialog title="Создать группу" close={close} className="dialog new-group-dialog" backdropClassName="dialog-backdrop new-group-dialog-backdrop">
+    <header className="panel-heading new-group-header">
+      <Button type="button" className="icon-button" aria-label={step==="members"?"Закрыть":"Назад к участникам"} disabled={busy} onClick={()=>step==="members"?close():setStep("members")}>{step==="members"?<X size={20}/>:<ArrowLeft size={20}/>}</Button>
+      <div><strong>{step==="members"?"Участники":"Новая группа"}</strong><small>Шаг {step==="members"?1:2} из 2</small></div>
+      {step==="members"?<Button type="button" className="icon-button new-group-next" aria-label="Далее" disabled={!ids.length} onClick={()=>setStep("details")}><ArrowRight size={22}/></Button>:<span className="new-group-header-spacer"/>}
+    </header>
+    <Form className="dialog-body new-group-form" onSubmit={async event=>{
+    event.preventDefault();if(step!=="details"||busy||!ids.length||!title.trim())return;
+    setBusy(true);
+    try{const result=await api("chats","POST",{kind:"group",userIds:ids,title:title.trim()});await done(result.id);}
+    catch(error){notify(error);}finally{setBusy(false);}
+  }}>
+    {step==="members"?<>
+    {!!selected.length&&<div className="new-group-members" aria-label="Выбранные участники">
+      {selected.map(user=><Button key={user.id} type="button" className="new-group-tag" aria-label={`Убрать ${user.name}`} disabled={busy} onClick={()=>toggle(user.id)}><span>{user.name}</span><X size={14} aria-hidden="true"/></Button>)}
+    </div>}
+    <div className="new-group-people-heading"><strong>Участники</strong><span>{ids.length?`Выбрано: ${ids.length}`:""}</span></div>
+    <label className="new-group-search"><Search size={18} aria-hidden="true"/><input ref={searchInput} type="search" enterKeyHint="search" onKeyDown={event=>{if(event.key==="Enter"&&!event.nativeEvent.isComposing)event.preventDefault();}} aria-label="Найти участника" placeholder="Найти по имени" value={query} onChange={event=>setQuery(event.target.value)} disabled={busy}/></label>
+    <div className="new-group-people" aria-label="Участники сообщества">
+      {visible.map(user=><Button key={user.id} type="button" className="new-group-person" aria-label={user.name} disabled={busy} onPointerDown={event=>{retainSearch.current=document.activeElement===searchInput.current;if(retainSearch.current)event.preventDefault();}} onClick={()=>{toggle(user.id);setQuery("");if(retainSearch.current)searchInput.current?.focus({preventScroll:true});retainSearch.current=false;}}><Avatar name={user.name} image={user.image}/><span>{user.name}</span></Button>)}
+      {!visible.length&&<p className="field-note">{!users.length?"Пока нет доступных участников.":!available.length?"Все участники выбраны.":"Никого не нашли. Попробуйте другое имя."}</p>}
+    </div>
+    </>:<>
+    <Field label="Название группы"><input name="title" value={title} onChange={event=>setTitle(event.target.value)} enterKeyHint="done" onKeyDown={finishInput} placeholder="Как назовём группу?" required maxLength={120} disabled={busy}/></Field>
+    <div className="new-group-summary"><strong>Участники · {selected.length}</strong><p>{selected.map(user=>user.name).join(", ")}</p></div>
+    <Button className="primary-button" disabled={busy||!ids.length||!title.trim()}>{busy?"Создаём…":"Создать группу"}</Button>
+    </>}
+  </Form></OverlayDialog>;
 }
 export function UserForm({
   user,
