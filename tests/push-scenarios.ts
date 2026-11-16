@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createECDH, randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { v7 } from "uuid";
-import webpush from "web-push";
+import * as webpush from "web-push";
 import { db } from "../apps/api/src/db";
 import { auth } from "../apps/api/src/modules/auth/config";
 import { subscribe } from "../apps/api/src/modules/push/service";

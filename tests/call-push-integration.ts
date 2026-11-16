@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {randomBytes,createECDH} from 'node:crypto';
-import webpush from 'web-push';
+import * as webpush from 'web-push';
 import {v7} from 'uuid';
 import {pool} from '../apps/api/src/db';
 import {auth} from '../apps/api/src/modules/auth/config';

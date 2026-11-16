@@ -1,4 +1,4 @@
-import webpush from 'web-push';
+import * as webpush from 'web-push';
 import {createHash} from 'node:crypto';
 import {sql} from 'drizzle-orm';
 import {db} from '../../db';
