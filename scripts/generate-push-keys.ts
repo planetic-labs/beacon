@@ -1,4 +1,4 @@
-import webpush from "web-push";
+import * as webpush from "web-push";
 import { readFile, writeFile, rename, open, unlink } from "node:fs/promises";
 const output=process.argv[2];
 if (!output?.startsWith("/run/")) throw new Error("Provide an environment file in a mounted external /run directory");
