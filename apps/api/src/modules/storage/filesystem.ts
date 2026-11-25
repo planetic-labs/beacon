@@ -12,13 +12,21 @@ const absent=(error:unknown)=>(error as NodeJS.ErrnoException).code==='ENOENT';
 export type DiskEntry={name:string;directory:boolean;size:number;mtime:string};
 // UUIDs remain API identities. Only this adapter resolves them into filesystem paths.
 export class MountedStorage implements FileStorage {
-  constructor(private root:string,private client:PoolClient,private spaceId:string){}
+  constructor(private root:string,private client:PoolClient,private spaceId:string){this.root=path.resolve(root);}
+  private contained(candidate:string){
+    const resolved=path.resolve(candidate);
+    const prefix=this.root.endsWith(path.sep)?this.root:this.root+path.sep;
+    if(!resolved.startsWith(prefix)||resolved===this.root)throw new HttpError(400,'Некорректный путь');
+    return resolved;
+  }
   async path(relative:string,internal=false){
     const parts=relative.split('/');
     if(path.isAbsolute(relative)||parts.some(p=>!p||p==='.'||p==='..'||p.includes('\\')||/[\x00-\x1f\x7f]/.test(p)||(!internal&&p.startsWith('.'))))throw new HttpError(400,'Некорректный путь');
     let current=this.root;
-    for(const part of parts){current=path.join(current,part);try{if((await lstat(current)).isSymbolicLink())throw new HttpError(400,'Символьные ссылки не поддерживаются');}catch(error){if(!absent(error))throw error;}}
-    return current;
+    // Check every ancestor before touching the disk, and the final path before
+    // returning it to callers. A sibling with the same prefix is not inside root.
+    for(const part of parts){current=this.contained(path.join(current,part));try{if((await lstat(current)).isSymbolicLink())throw new HttpError(400,'Символьные ссылки не поддерживаются');}catch(error){if(!absent(error))throw error;}}
+    return this.contained(current);
   }
   async relative(key:string):Promise<string>{
     const {rows:[n]}=await this.client.query('select filesystem_path from storage_node where id=$1 and space_id=$2',[key,this.spaceId]);

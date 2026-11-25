@@ -28,6 +28,29 @@ test('storage configuration rejects invalid roots and duplicate IDs without reve
 import { MountedStorage } from '../apps/api/src/modules/storage/filesystem';
 import { writeFile, readFile, lstat, symlink, mkdir } from 'node:fs/promises';
 import type { PoolClient } from 'pg';
+test('mounted operations reject traversal and preserve neighboring files',async()=>{
+ const base=await mkdtemp(path.join(tmpdir(),'beacon-containment-'));
+ const root=path.join(base,'files'),outside=path.join(base,'files-other');
+ await mkdir(root);await mkdir(outside);await writeFile(path.join(outside,'secret'),'unchanged');
+ let target='safe.txt';
+ const client={query:async()=>({rows:[{filesystem_path:target}]})} as unknown as PoolClient;
+ const storage=new MountedStorage(root+path.sep,client,v7());
+ try{
+  for(const invalid of ['../files-other/secret',outside+'/secret','nested/../../files-other/secret','nested/../safe.txt','a\\b','a\0b','.','']){
+   await assert.rejects(storage.path(invalid));
+   await assert.rejects(storage.exists(invalid));
+   await assert.rejects(storage.makeDirectory(invalid));
+   await assert.rejects(storage.move('safe.txt',invalid));
+   target=invalid;await assert.rejects(storage.read(v7()));
+  }
+  await symlink(outside,path.join(root,'alias'));
+  await assert.rejects(storage.list('alias'));await assert.rejects(storage.makeDirectory('alias/new'));
+  assert.equal(await readFile(path.join(outside,'secret'),'utf8'),'unchanged');
+  assert.equal(await storage.path('Вложенная папка/фото.jpg'),path.join(root,'Вложенная папка','фото.jpg'));
+  assert.equal(await storage.path('.beacon-trash/item',true),path.join(root,'.beacon-trash','item'));
+  await assert.rejects(storage.path('.beacon-trash/item'));
+ }finally{await rm(base,{recursive:true,force:true});}
+});
 test('mounted files publish only after verification, refuse collisions and symlink traversal',async()=>{
  const root=await mkdtemp(path.join(tmpdir(),'beacon-mounted-'));
  const key=v7();let target='Ready.txt';
